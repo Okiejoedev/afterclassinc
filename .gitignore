@@ -1,0 +1,5 @@
+.DS_Store
+Thumbs.db
+supabase/.temp/
+supabase/.branches/
+.env

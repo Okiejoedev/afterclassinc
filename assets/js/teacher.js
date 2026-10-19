@@ -1,6 +1,6 @@
 // Teacher dashboard entry: sign in, routing, the quiz list and the
 // "start" options (live game, class teams, assignment / online test).
-import { sb, configured, rpc, q } from "./sb.js";
+import { sb, configured, configProblem, friendly, rpc, q } from "./sb.js";
 import { $, esc, toast, ask, dialog, fmtDate, LOGO, store } from "./ui.js";
 import { ctx, frame, words, statusChip } from "./shell.js";
 import { loadHeader, schoolView } from "./school.js";
@@ -20,7 +20,7 @@ ctx.reloadHead = async () => { const { loadHeader: lh } = await import("./school
 if (!configured) {
   app.innerHTML = `<div class="auth panel"><a class="brand" href="../">${LOGO} Afterclass</a>
     <h1 style="font-size:26px">Almost there</h1>
-    <p class="muted" style="margin:0">This copy of Afterclass is not connected to a database yet. Open <code>assets/js/config.js</code> and paste your Supabase Project URL and publishable key (README, step 3).</p></div>`;
+    <p class="muted" style="margin:0">${configProblem || 'This copy of Afterclass is not connected to a database yet. Open <code>assets/js/config.js</code> and paste your Supabase Project URL and publishable key (README, step 3).'}</p></div>`;
 } else {
   let booted = false;
   sb.auth.onAuthStateChange((event, session) => {
@@ -66,7 +66,7 @@ function renderAuth(mode = "in") {
         if (error) throw error;
         st.textContent = "If that email has an account, a reset link is on its way.";
       }
-    } catch (err) { st.className = "status err"; st.textContent = err.message === "Invalid login credentials" ? "Wrong email or password." : err.message; }
+    } catch (err) { st.className = "status err"; st.textContent = err.message === "Invalid login credentials" ? "Wrong email or password." : /Email not confirmed/i.test(err.message) ? "Confirm your email first: open the link Supabase sent you, then sign in." : friendly(err.message); }
   };
 }
 

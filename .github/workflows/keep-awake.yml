@@ -1,0 +1,21 @@
+# Free Supabase projects pause after 7 days without use (for example during
+# school holidays). This job pings the database every 3 days to keep it awake.
+# It reads the public URL and key from assets/js/config.js, so there is nothing to set up.
+# Note: GitHub pauses scheduled jobs in repositories with no commits for 60 days;
+# re-enable it under the repository's Actions tab if that happens.
+name: Keep database awake
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping Supabase
+        run: |
+          URL=$(grep -oP 'SUPABASE_URL = "\K[^"]+' assets/js/config.js)
+          KEY=$(grep -oP 'SUPABASE_ANON_KEY = "\K[^"]+' assets/js/config.js)
+          if echo "$URL" | grep -q "YOUR-PROJECT"; then echo "config.js not filled in yet"; exit 0; fi
+          curl -sf -X POST "$URL/rest/v1/rpc/ping" -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}'
