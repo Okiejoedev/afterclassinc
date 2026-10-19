@@ -484,3 +484,21 @@ body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in s
 .steps-list li.done .tick { background: var(--good); border-color: var(--good); color: #fff; }
 .steps-list li.done b { color: var(--muted); }
 .bench.solo { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+
+/* ---------- leaderboard + practice ---------- */
+.board { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.board li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; }
+.board li:nth-child(odd) { background: var(--sunk); }
+.board li.me { background: color-mix(in srgb, var(--hi) 35%, var(--surface)); font-weight: 700; }
+.board li.gap { margin-top: 8px; border-top: 2px dashed var(--line); }
+.board .pos { font: 800 16px/1 var(--f-mono); text-align: center; }
+.board .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .sc { font-weight: 800; }
+.pq-fb { border-radius: 12px; padding: 14px 16px; color: #fff; }
+.pq-fb.ok { background: var(--good); }
+.pq-fb.no { background: #A8382F; }
+.pq-model { background: var(--stage-2); border: 1px solid var(--stage-line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; }
+.pq-model ul { margin: 0; padding-left: 20px; }
+.week { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 12px; }
+.trend { font-size: 13px; font-weight: 700; }
+.trend.up { color: var(--good); } .trend.down { color: var(--bad); } .trend.flat { color: var(--muted); }

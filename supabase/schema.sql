@@ -104,6 +104,19 @@ alter table public.classes alter column join_code set default upper(substr(md5(r
 create unique index if not exists classes_join_code_idx on public.classes (join_code);
 alter table public.students add column if not exists user_id uuid references auth.users(id) on delete set null;
 create unique index if not exists students_user_idx on public.students (class_id, user_id) where user_id is not null;
+-- Teachers can hide the class leaderboard from students.
+alter table public.classes add column if not exists leaderboard boolean not null default true;
+
+-- Practice: a student replaying a quiz they took. Private; never counts towards results.
+create table if not exists public.practice_runs (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  session_id uuid references public.sessions(id) on delete cascade,
+  score      int not null check (score >= 0),
+  total      int not null check (total >= 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists practice_runs_user_idx on public.practice_runs (user_id, created_at desc);
 
 -- A "session" is one run of a quiz: a live game or a self-paced assignment.
 -- Questions are copied in, so editing the quiz later never changes it.
@@ -243,6 +256,10 @@ alter table public.audience_questions enable row level security;
 alter table public.audience_votes     enable row level security;
 alter table public.join_attempts      enable row level security;
 alter table public.profiles           enable row level security;
+alter table public.practice_runs      enable row level security;
+
+drop policy if exists "own practice" on public.practice_runs;
+create policy "own practice" on public.practice_runs for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 drop policy if exists "own profile" on public.profiles;
 create policy "own profile" on public.profiles for all using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -1031,6 +1048,103 @@ create or replace function public.leave_class(p_class uuid) returns void
 language sql security definer set search_path = public as $$
   update students set user_id = null where class_id = p_class and user_id = auth.uid() $$;
 
+-- A student may practise a quiz once the answers are no longer secret: a live game
+-- that has ended, or a test that has closed (or "show answers on hand-in" and handed in).
+create or replace function public._practice_open(s sessions, p players) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case when s.settings -> 'teams' is not null then false
+              when s.kind = 'live' then s.status = 'ended'
+              else s.answer_reveal <> 'never' and (s.status = 'closed' or (s.closes_at is not null and s.closes_at < now())
+                                                   or (s.answer_reveal = 'submit' and p.finished_at is not null)) end $$;
+
+-- The questions (with answers) of a quiz the student took, for practice.
+create or replace function public.practice_quiz(p_session uuid) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare s sessions; p players; me uuid := auth.uid();
+begin
+  if me is null then raise exception 'Sign in first.'; end if;
+  select * into s from sessions where id = p_session;
+  if not found then raise exception 'This quiz is no longer available.'; end if;
+  select * into p from players where session_id = s.id
+     and (user_id = me or student_id in (select id from students where user_id = me))
+   order by finished_at nulls last limit 1;
+  if not found then raise exception 'You can only practise quizzes you have taken.'; end if;
+  if not public._practice_open(s, p) then raise exception 'Practice opens once your teacher closes this test.'; end if;
+  return json_build_object('session_id', s.id, 'title', s.title,
+    'questions', (select coalesce(jsonb_agg(q), '[]'::jsonb) from jsonb_array_elements(s.questions) q
+                   where q ->> 'type' in ('mcq', 'tf', 'short')));
+end $$;
+
+-- Class ranking by average score over the class's tests and live games.
+-- Students see the top 10 and their own place; the class teacher sees everyone.
+create or replace function public.class_leaderboard(p_class uuid) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare c classes; me uuid := auth.uid(); mine uuid; owner boolean;
+begin
+  select * into c from classes where id = p_class;
+  if not found then raise exception 'Class not found.'; end if;
+  owner := c.owner_id = me;
+  select id into mine from students where class_id = c.id and user_id = me;
+  if not owner and mine is null then raise exception 'You are not in this class.'; end if;
+  if not owner and not c.leaderboard then return json_build_object('enabled', false, 'class', c.name); end if;
+  return (with res as (
+      select st.id, st.full_name,
+             round(avg(case when s.kind = 'assignment' then p.score / 10.0
+                            else 100.0 * p.correct / nullif((select count(*) from jsonb_array_elements(s.questions) q
+                                                               where q ->> 'type' in ('mcq', 'tf', 'short')), 0) end)) as avg,
+             count(*) as taken
+        from students st
+        join players p on p.student_id = st.id
+        join sessions s on s.id = p.session_id and s.class_id = c.id
+       where st.class_id = c.id and not coalesce((s.settings ->> 'hideScores')::boolean, false)
+         and (s.kind = 'live' or p.finished_at is not null)
+       group by st.id, st.full_name),
+    ranked as (select *, rank() over (order by avg desc nulls last, taken desc) as pos from res where avg is not null)
+    select json_build_object('enabled', c.leaderboard, 'class', c.name, 'count', (select count(*) from ranked),
+      'top', coalesce((select json_agg(json_build_object('pos', pos, 'name', full_name, 'avg', avg, 'taken', taken, 'me', id = mine) order by pos, full_name)
+                         from ranked where owner or pos <= 10), '[]'::json),
+      'me', (select json_build_object('pos', pos, 'avg', avg, 'taken', taken) from ranked where id = mine)));
+end $$;
+
+-- The teacher's week at a glance (last 7 days against the 7 before).
+create or replace function public.teacher_week() returns json
+language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'Sign in first.'; end if;
+  return (with ss as (
+      select s.*, case when s.created_at >= now() - interval '7 days' then 'this' else 'last' end as wk
+        from sessions s where s.owner_id = me and s.created_at >= now() - interval '14 days' and s.settings -> 'teams' is null),
+    pp as (select p.*, ss.wk, ss.kind as s_kind, ss.questions as s_questions from players p join ss on ss.id = p.session_id),
+    pc as (select pp.*, case when s_kind = 'assignment' then score / 10.0
+                             else 100.0 * correct / nullif((select count(*) from jsonb_array_elements(s_questions) q
+                                                             where q ->> 'type' in ('mcq', 'tf', 'short')), 0) end as pct
+             from pp where s_kind = 'live' or finished_at is not null)
+    select json_build_object(
+      'sessions', (select count(*) from ss where wk = 'this'), 'sessions_prev', (select count(*) from ss where wk = 'last'),
+      'people', (select count(*) from pp where wk = 'this'), 'people_prev', (select count(*) from pp where wk = 'last'),
+      'avg', (select round(avg(pct)) from pc where wk = 'this'), 'avg_prev', (select round(avg(pct)) from pc where wk = 'last'),
+      'top', (select coalesce(json_agg(t), '[]'::json) from (
+          select min(nickname) as name, round(avg(pct)) as avg, count(*) as taken from pc
+           where wk = 'this' and pct is not null
+           group by coalesce(student_id::text, user_id::text, id::text)
+           order by avg(pct) desc, count(*) desc limit 5) t),
+      'hardest', (select coalesce(json_agg(h), '[]'::json) from (
+          select ss.title, ss.id as session_id, a.q_index, ss.questions -> a.q_index ->> 'question' as question,
+                 round(100.0 * count(*) filter (where a.is_correct) / count(*)) as pct, count(*) as answered
+            from answers a join ss on ss.id = a.session_id
+           where ss.wk = 'this' and ss.questions -> a.q_index ->> 'type' in ('mcq', 'tf', 'short')
+           group by ss.title, ss.id, a.q_index, ss.questions
+          having count(*) >= 3
+           order by 5, 6 desc limit 3) h),
+      'missing', (select coalesce(json_agg(m), '[]'::json) from (
+          select ss.title, ss.id as session_id, ss.status, ss.closes_at, count(*) as missing
+            from ss join students st on st.class_id = ss.class_id
+           where ss.wk = 'this' and ss.kind = 'assignment'
+             and not exists (select 1 from players p where p.session_id = ss.id and p.student_id = st.id and p.finished_at is not null)
+           group by ss.id, ss.title, ss.status, ss.closes_at order by 5 desc limit 5) m)));
+end $$;
+
 -- Everything the student dashboard shows, in one call.
 create or replace function public.student_home() returns json
 language plpgsql stable security definer set search_path = public as $$
@@ -1052,8 +1166,10 @@ begin
               where s.status not in ('ended', 'closed') and s.settings -> 'teams' is null
                 and (s.kind = 'live' or s.closes_at is null or s.closes_at > now())
                 and not exists (select 1 from players p where p.session_id = s.id and p.student_id = st.id and p.finished_at is not null)),
+    'practice_runs', (select count(*) from practice_runs where user_id = me),
     'history', (select coalesce(json_agg(h order by h.at desc), '[]'::json) from (
-                  select s.title, s.kind, s.pin, s.class_id is not null as graded, p.score, p.correct,
+                  select s.id as session_id, s.title, s.kind, s.pin, s.class_id is not null as graded, p.score, p.correct,
+                         public._practice_open(s, p) as practice,
                          jsonb_array_length(s.questions) as questions, coalesce(p.finished_at, p.joined_at) as at,
                          p.finished_at is not null as finished, coalesce((s.settings ->> 'hideScores')::boolean, false) as hide_scores
                     from players p join sessions s on s.id = p.session_id
@@ -1083,12 +1199,13 @@ begin
     'public.delete_my_data()', 'public.create_school(text, text, text)', 'public.join_school(text, text, text)',
     'public.set_member(uuid, text, text)', 'public.new_join_code()', 'public.leave_school()',
     'public.submit_for_review(uuid)', 'public.review_quiz(uuid, text, text)',
-    'public.join_class(text, text)', 'public.leave_class(uuid)', 'public.student_home()'] loop
+    'public.join_class(text, text)', 'public.leave_class(uuid)', 'public.student_home()',
+    'public.practice_quiz(uuid)', 'public.class_leaderboard(uuid)', 'public.teacher_week()'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
   -- internal helpers are not callable from the website
-  foreach f in array array['public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()',
+  foreach f in array array['public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()', 'public._practice_open(public.sessions, public.players)',
     'public._assignment_results(public.players, public.sessions)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;

@@ -3,6 +3,7 @@
 // student.js passes in how to start a game: { pin(pin), joinAs(pin, name) }.
 import { sb, friendly, rpc, q } from "./sb.js";
 import { $, esc, toast, ask, dialog, fmtDate, LOGO } from "./ui.js";
+import { practise } from "./practice.js";
 
 const app = $("#app");
 let hooks = {}, user = null, profile = null;
@@ -150,14 +151,16 @@ async function studentDash(msg = "") {
     ${header(`<span class="who-chip">${esc(profile.full_name || user.email)}</span><button class="btn ghost" id="out" type="button">Sign out</button>`)}
     ${msg ? `<div class="notice">${esc(msg)}</div>` : ""}
     <div class="page-h"><div><span class="label">Student dashboard</span><h1>Hi, ${esc(first)}</h1></div></div>
-    <div class="stat-row" id="stats">${["Games & tests", "Average test score", "Classes", "To do"].map((l) => `<div class="stat"><span class="label">${l}</span><b>–</b></div>`).join("")}</div>
+    <div class="stat-row" id="stats">${["Games & tests", "Average test score", "Practice runs", "To do"].map((l) => `<div class="stat"><span class="label">${l}</span><b>–</b></div>`).join("")}</div>
     <div class="dash">
       <div class="dash-main">
         <section class="panel"><div class="spread"><h2 class="h2">Join a game</h2></div>${pinBox("dashPin")}</section>
         <section class="panel"><h2 class="h2">To do</h2><div id="todo"><p class="muted">Loading…</p></div></section>
+        <section class="panel"><div class="spread"><h2 class="h2">Practice</h2><span class="muted" style="font-size:13px">Replay quizzes you've taken. Private, doesn't affect results.</span></div><div id="prac"><p class="muted">Loading…</p></div></section>
         <section class="panel"><h2 class="h2">Recent results</h2><div id="hist"><p class="muted">Loading…</p></div></section>
       </div>
       <aside class="dash-side">
+        <section class="panel" id="lbPanel" hidden><div class="spread"><h2 class="h2">Leaderboard</h2><select id="lbClass" aria-label="Class" style="width:auto;max-width:60%"></select></div><div id="lb"></div></section>
         <section class="panel"><h2 class="h2">My classes</h2><div id="classes"><p class="muted">Loading…</p></div>
           <form id="joinClass" style="display:grid;gap:10px;border-top:1px solid var(--line);padding-top:14px" autocomplete="off">
             <div class="field"><label class="label" for="cCode">Join a class</label><input id="cCode" type="text" maxlength="12" placeholder="Class code from your teacher" required style="text-transform:uppercase;font-family:var(--f-mono);letter-spacing:.1em"></div>
@@ -196,13 +199,21 @@ async function loadDash() {
   try { d = await rpc("student_home", {}); }
   catch (err) {
     const missing = /Could not find the function|database isn't set up/i.test(err.message);
-    ["#todo", "#hist", "#classes"].forEach((s) => ($(s).innerHTML = `<p class="status err">${esc(missing ? "Student accounts aren't switched on yet. Ask your teacher (or the site owner) to re-run supabase/schema.sql." : err.message)}</p>`));
+    ["#todo", "#prac", "#hist", "#classes"].forEach((s) => ($(s).innerHTML = `<p class="status err">${esc(missing ? "Student accounts aren't switched on yet. Ask your teacher (or the site owner) to re-run supabase/schema.sql." : err.message)}</p>`));
     return;
   }
   const graded = d.history.filter((h) => h.kind === "assignment" && h.finished && !h.hide_scores);
   const avg = graded.length ? Math.round(graded.reduce((a, h) => a + h.score / 10, 0) / graded.length) + "%" : "–";
-  $("#stats").innerHTML = [["Games & tests", d.history.length], ["Average test score", avg], ["Classes", d.classes.length], ["To do", d.todo.length]]
+  $("#stats").innerHTML = [["Games & tests", d.history.length], ["Average test score", avg], ["Practice runs", d.practice_runs ?? 0], ["To do", d.todo.length]]
     .map(([l, v]) => `<div class="stat"><span class="label">${l}</span><b>${v}</b></div>`).join("");
+
+  // Practice: each quiz once (newest attempt), when its answers are no longer secret.
+  const seen = new Set(), prac = d.history.filter((h) => h.practice && !seen.has(h.session_id) && seen.add(h.session_id));
+  $("#prac").innerHTML = prac.length ? `<ul class="todo">${prac.slice(0, 8).map((h) => `<li><div><b>${esc(h.title)}</b><div class="muted" style="font-size:13px">${h.kind === "live" ? "Live game" : "Test"} · ${esc(fmtDate(h.at))}</div></div>
+      <button class="btn sm primary" data-practise="${h.session_id}" type="button">Practise</button></li>`).join("")}</ul>`
+    : `<p class="muted" style="margin:0">After a live game ends, or your teacher closes a test, you can practise it here as many times as you like.</p>`;
+  $("#prac").onclick = (e) => { const b = e.target.closest("[data-practise]"); if (b) practise(b.dataset.practise, () => home()); };
+  loadBoard(d.classes);
 
   $("#todo").innerHTML = d.todo.length ? `<ul class="todo">${d.todo.map((t) => `<li>
       <div><b>${esc(t.title)}</b><div class="muted" style="font-size:13px">${esc(t.class)} · ${t.kind === "live" ? `<span class="chip live">LIVE NOW</span>` : `${t.timed ? "Timed test" : "Assignment"} · ${t.questions} questions${t.closes_at ? ` · due ${esc(fmtDate(t.closes_at))}` : ""}`}</div></div>
@@ -223,6 +234,28 @@ async function loadDash() {
     if (!(await ask(`Leave ${b.dataset.name}? Your past results stay with your teacher.`, "Leave class", true))) return;
     try { await rpc("leave_class", { p_class: b.dataset.leave }); toast("Left the class"); loadDash(); } catch (err) { toast(err.message, true); }
   };
+}
+
+// Class leaderboard: top 10 and your own place (the teacher can turn it off).
+const MEDAL = ["🥇", "🥈", "🥉"];
+function loadBoard(classes) {
+  const panel = $("#lbPanel"), sel = $("#lbClass");
+  if (!classes.length) { panel.hidden = true; return; }
+  panel.hidden = false;
+  sel.innerHTML = classes.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  sel.hidden = classes.length < 2;
+  const show = async () => {
+    const box = $("#lb"); box.innerHTML = `<p class="muted">Loading…</p>`;
+    let b;
+    try { b = await rpc("class_leaderboard", { p_class: sel.value }); } catch (err) { box.innerHTML = `<p class="status err">${esc(err.message)}</p>`; return; }
+    if (!b.enabled) { box.innerHTML = `<p class="muted" style="margin:0">Your teacher has turned off the leaderboard for this class.</p>`; return; }
+    if (!b.top.length) { box.innerHTML = `<p class="muted" style="margin:0">No scores yet. The leaderboard fills up as your class takes tests and live games.</p>`; return; }
+    const meInTop = b.top.some((r) => r.me);
+    box.innerHTML = `<ol class="board">${b.top.map((r) => `<li class="${r.me ? "me" : ""}"><span class="pos">${r.pos <= 3 ? MEDAL[r.pos - 1] : r.pos}</span><span class="nm">${esc(r.name)}${r.me ? " (you)" : ""}</span><span class="sc num">${r.avg}%</span></li>`).join("")}
+      ${b.me && !meInTop ? `<li class="me gap"><span class="pos">${b.me.pos}</span><span class="nm">You</span><span class="sc num">${b.me.avg}%</span></li>` : ""}</ol>
+      <p class="muted" style="margin:0;font-size:13px">${b.me ? `You're number ${b.me.pos} of ${b.count}, averaged over ${b.me.taken} test${b.me.taken > 1 ? "s" : ""} and games.` : "Take a class test or live game to get on the board."}</p>`;
+  };
+  sel.onchange = show; show();
 }
 
 function result(h) {

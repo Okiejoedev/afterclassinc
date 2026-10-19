@@ -1,6 +1,6 @@
 // Teacher home: an overview of everything at a glance, with quick actions,
 // what's running now, recent quizzes, class codes for students, and results.
-import { sb, q } from "./sb.js";
+import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, fmtDate } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
 import { sampleDialog } from "./samples.js";
@@ -54,6 +54,7 @@ export async function overviewView() {
       ${step(sessions.some((s) => s.kind === "live"), "Play it as a live game", `Press <b>▶ Play live</b> on a quiz. Put the host screen on a projector or share it on Zoom; ${w.learners} join on their phones with the PIN. A leaderboard shows after each question and a podium at the end.`)}
       ${step(classes.length > 0, "Add your class", `Create a class list, then give ${w.learners} the class code so tests you set appear on their dashboard.`)}
     </ol></section>` : ""}
+    <section class="panel" id="week" hidden></section>
     ${running.length ? `<section class="panel"><div class="spread"><h2 class="h2">Happening now</h2><span class="chip live">● LIVE</span></div>
       <ul class="todo">${running.map((s) => `<li><div><b>${esc(s.title)}</b><div class="muted" style="font-size:13px"><span class="chip">${kindName(s)}</span> PIN <span class="num">${esc(s.pin)}</span> · ${people(s)} joined${s.closes_at ? ` · due ${esc(fmtDate(s.closes_at))}` : ""}</div></div>
         <div class="row">${s.kind === "live" ? `<a class="btn primary sm" href="host.html?s=${s.id}">Host screen</a>` : ""}<a class="btn sm" href="#/report/${s.id}">Results</a></div></li>`).join("")}</ul></section>` : ""}
@@ -82,9 +83,38 @@ export async function overviewView() {
     </div>`;
 
   v.querySelectorAll("[data-sample]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); sampleDialog(() => (location.hash = "#/quizzes")); }));
+  loadWeek($("#week", v), w);
   const copy = (t, msg) => navigator.clipboard?.writeText(t).then(() => toast(msg), () => toast(t));
   v.querySelectorAll("[data-code]").forEach((b) => (b.onclick = () => copy(b.dataset.code, "Class code copied")));
   $("#copySite", v).onclick = () => copy(new URL("../", location.href).href, "Link copied");
   const open = (e) => { const tr = e.target.closest("tr[data-id]"); if (tr) location.hash = "#/report/" + tr.dataset.id; };
   v.querySelectorAll("table.data").forEach((t) => { t.onclick = open; t.onkeydown = (e) => { if (e.key === "Enter") open(e); }; });
+}
+
+// "This week": last 7 days against the 7 before (needs the newer database; hidden otherwise).
+async function loadWeek(box, w) {
+  let d;
+  try { d = await rpc("teacher_week", {}); } catch { return; }
+  box.hidden = false;
+  if (!d.sessions && !d.sessions_prev) {
+    box.innerHTML = `<h2 class="h2">This week</h2><p class="muted" style="margin:0">No games or tests in the last two weeks. Press <b>▶ Play live</b> on a quiz, or set an assignment, and your weekly summary appears here.</p>`;
+    return;
+  }
+  const trend = (cur, prev, unit = "") => {
+    if (prev == null || (!prev && !cur)) return `<span class="trend flat">no data last week</span>`;
+    const diff = (cur ?? 0) - prev;
+    return diff > 0 ? `<span class="trend up">▲ ${diff}${unit} on last week</span>` : diff < 0 ? `<span class="trend down">▼ ${-diff}${unit} on last week</span>` : `<span class="trend flat">same as last week</span>`;
+  };
+  const tile = (label, val, tr) => `<div class="stat"><span class="label">${label}</span><b>${val}</b>${tr}</div>`;
+  box.innerHTML = `<div class="spread"><h2 class="h2">This week</h2><span class="muted" style="font-size:13px">Last 7 days</span></div>
+    <div class="week">
+      ${tile("Games &amp; tests", d.sessions, trend(d.sessions, d.sessions_prev))}
+      ${tile("Took part", d.people, trend(d.people, d.people_prev))}
+      ${tile("Average score", d.avg == null ? "–" : d.avg + "%", d.avg == null ? "" : trend(d.avg, d.avg_prev, "%"))}
+    </div>
+    <div class="week" style="align-items:start">
+      <div><span class="label">Top ${w.learners}</span>${d.top.length ? `<ol class="board" style="margin-top:8px">${d.top.map((r, i) => `<li><span class="pos">${i + 1}</span><span class="nm">${esc(r.name)}</span><span class="sc num">${r.avg}%</span></li>`).join("")}</ol>` : `<p class="muted" style="margin:6px 0 0;font-size:14px">No scores yet this week.</p>`}</div>
+      <div><span class="label">Hardest questions</span>${d.hardest.length ? `<ul class="todo">${d.hardest.map((h) => `<li><div><a href="#/report/${h.session_id}" style="color:inherit"><b>${esc(String(h.question || "").slice(0, 110))}</b></a><div class="muted" style="font-size:13px">${h.pct}% got it right · ${esc(h.title)}</div></div></li>`).join("")}</ul>` : `<p class="muted" style="margin:6px 0 0;font-size:14px">Shows once at least 3 people answer a question.</p>`}</div>
+      <div><span class="label">Haven't handed in</span>${d.missing.length ? `<ul class="todo">${d.missing.map((m) => `<li><div><a href="#/report/${m.session_id}" style="color:inherit"><b>${esc(m.title)}</b></a><div class="muted" style="font-size:13px">${m.missing} ${m.missing > 1 ? w.learners : w.learner} on the class list${m.status === "open" && (!m.closes_at || new Date(m.closes_at) > new Date()) ? " · still open" : ""}</div></div></li>`).join("")}</ul>` : `<p class="muted" style="margin:6px 0 0;font-size:14px">Everyone on your class lists has handed in.</p>`}</div>
+    </div>`;
 }

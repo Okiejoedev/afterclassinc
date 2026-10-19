@@ -1,6 +1,6 @@
 // Class lists (rosters): admission / matric numbers and names, so graded
 // tests have one attempt per student and results carry real names.
-import { sb, q } from "./sb.js";
+import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, ask, fmtDate } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
 
@@ -62,6 +62,10 @@ export async function classView(id) {
     ${cls.join_code ? `<section class="panel" style="grid-template-columns:auto minmax(0,1fr);align-items:center">
       <button class="code-pill" id="code" type="button" style="font-size:26px;padding:12px 16px" title="Copy code">${esc(cls.join_code)}</button>
       <div><b>Class code</b><p class="muted" style="margin:2px 0 0;font-size:14px">${w.Learners} register on the home page (${esc(new URL("../", location.href).href)}) and enter this code to join. They're added to the list below, and tests you set for this class show up on their dashboard.</p></div></section>` : ""}
+    ${cls.leaderboard !== undefined ? `<section class="panel"><div class="spread"><h2 style="font-size:20px">Leaderboard</h2>
+      <label class="check"><input type="checkbox" id="lbShow" ${cls.leaderboard ? "checked" : ""}> Show top 10 to ${w.learners}</label></div>
+      <p class="muted" style="margin:0;font-size:14px">Average score over this class's tests and live games (games with hidden scores don't count). ${w.Learners} see the top 10 and their own place, never the bottom of the list.</p>
+      <div id="lbList"><p class="muted">Loading…</p></div></section>` : ""}
     <div class="bench">
       <section class="panel"><h2 style="font-size:20px">Add ${w.learners}</h2>
         <p class="muted" style="margin:0;font-size:14px">Paste one per line: admission / matric number and full name. You can copy two columns straight from Excel or Google Sheets.</p>
@@ -76,6 +80,17 @@ export async function classView(id) {
       </section>
     </div>`;
   $("#code", v)?.addEventListener("click", () => navigator.clipboard?.writeText(cls.join_code).then(() => toast("Class code copied"), () => {}));
+  if (cls.leaderboard !== undefined) {
+    rpc("class_leaderboard", { p_class: id }).then((b) => {
+      $("#lbList", v).innerHTML = b.top.length ? `<div class="scroll-x"><table class="data"><thead><tr><th>#</th><th>Name</th><th>Average</th><th>Taken</th></tr></thead><tbody>
+        ${b.top.map((r) => `<tr><td class="num">${r.pos}</td><td>${esc(r.name)}</td><td class="num"><b>${r.avg}%</b></td><td class="num">${r.taken}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="muted" style="margin:0">No scores yet. Start a test or live game with this class list and the ranking appears here.</p>`;
+    }, (err) => ($("#lbList", v).innerHTML = `<p class="status err">${esc(err.message)}</p>`));
+    $("#lbShow", v).onchange = async (e) => {
+      try { await q(sb.from("classes").update({ leaderboard: e.target.checked }).eq("id", id)); toast(e.target.checked ? `${w.Learners} can see the leaderboard` : "Leaderboard hidden from " + w.learners); }
+      catch (err) { e.target.checked = !e.target.checked; toast(err.message, true); }
+    };
+  }
   const preview = () => { const r = parseRoster($("#paste", v).value); $("#pv", v).textContent = r.length ? `${r.length} ${w.learners} found` : ""; return r; };
   $("#paste", v).oninput = preview;
   $("#csv", v).onchange = async (e) => { const f = e.target.files[0]; if (f) { $("#paste", v).value = await f.text(); preview(); } };
