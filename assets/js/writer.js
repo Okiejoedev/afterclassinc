@@ -45,6 +45,10 @@ const NUMWORD = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8
 const NUMNAME = ["", "one", "two", "three", "four", "five", "six"];
 
 /* ---------------- 1. read the structure ---------------- */
+// Lesson notes often end with EVALUATION / ASSIGNMENT questions: those are not facts to ask about.
+const NOT_CONTENT = /^(?:evaluation|class\s*work|classwork|assignment|weekend assignment|reading assignment|home\s*work|exercises?|questions?|revision questions?|test yourself|quiz|references?|further reading|bibliography|summary questions?)\b/i;
+const ASK_START = /^(?:define|state|list|mention|explain|describe|discuss|give|name|outline|enumerate|highlight|identify|differentiate|distinguish|compare|write|draw|label|calculate|what|why|how|which|who|when|where)\b/i;
+const isAsk = (t) => /\?\s*$/.test(t) || ASK_START.test(String(t).trim());
 const BULLET = /^\s*(?:[-•●▪◦*·‣⁃–—►✓]|\(?[a-h]\)|\(?(?:i|ii|iii|iv|v|vi|vii|viii)\)|\d{1,2}[.)])\s+/i;
 
 function isHeading(line, prevEndsSentence) {
@@ -65,12 +69,12 @@ function parse(text) {
     const body = para.join(" ").replace(/\s+/g, " ").trim(); para = [];
     for (const s of body.split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/)) {
       const t = s.trim();
-      if (t.length >= 25 && t.length <= 320 && wc(t) >= 5 && /[a-z]/.test(t)) seg.sentences.push({ s: t, src: src() });
+      if (t.length >= 25 && t.length <= 320 && wc(t) >= 5 && /[a-z]/.test(t) && !isAsk(t)) seg.sentences.push({ s: t, src: src() });
     }
   };
   const flushBullets = () => {
     if (bullets.length >= 2) {
-      const items = bullets.map(splitItem).filter(Boolean);
+      const items = bullets.filter((b) => !isAsk(b)).map(splitItem).filter(Boolean);
       // Long bullets are really sentences.
       const listy = items.filter((x) => wc(x.name) <= 10);
       if (listy.length >= 2) seg.lists.push({ intro, heading: seg.heading, items: listy, src: src() });
@@ -98,13 +102,15 @@ function parse(text) {
     if (isHeading(line, prevEnds)) {
       flushPara();
       seg = { heading: line.replace(/:$/, ""), sentences: [], lists: [] }; segs.push(seg);
+      // Lesson-note sections that hold questions, not content.
+      seg.skip = NOT_CONTENT.test(seg.heading);
       prevEnds = true; continue;
     }
     para.push(line);
     prevEnds = /[.?!:]$/.test(line);
   }
   flushBullets(); flushPara();
-  return segs.filter((g) => g.sentences.length || g.lists.length);
+  return segs.filter((g) => !g.skip && (g.sentences.length || g.lists.length));
 }
 
 // "Nucleus – controls the cell" -> { name: "Nucleus", detail: "controls the cell" }
@@ -157,7 +163,7 @@ function extract(segs) {
       // "Nucleus – controls the activities of the cell": a fact about each item.
       for (const it of L.items) if (it.detail && wc(it.detail) >= 2) {
         const term = cleanTerm(it.name);
-        if (term) add({ kind: "role", term, desc: it.detail, siblings: items, topic: hdr?.topic || "", seg: gi, src: L.src, text: `${term}: ${it.detail}` });
+        if (term) add({ kind: "role", term, desc: it.detail, siblings: items, topic: hdr?.topic || "", rel: hdr?.rel || "", seg: gi, src: L.src, text: `${term}: ${it.detail}` });
       }
     }
     for (const { s: whole, src } of g.sentences) for (const s of clauses(whole)) {
@@ -253,6 +259,13 @@ function whyQuestion(s) {
 }
 const lc = (s) => lcfirstIfCommon(s);
 const base = (v) => /(ss|sh|ch|x|z)es$/.test(v) ? v.slice(0, -2) : /ies$/.test(v) ? v.slice(0, -3) + "y" : v.slice(0, -1);
+// "release energy" -> "releases energy" after "Which part … ?" (one thing is asked for).
+function thirdPerson(phrase) {
+  const [v, ...rest] = phrase.split(" ");
+  if (/s$/.test(v) || rest[0] === "and") return phrase;
+  const w = /[^aeiou]y$/.test(v) ? v.slice(0, -1) + "ies" : /(s|sh|ch|x|z|o)$/.test(v) ? v + "es" : v + "s";
+  return [w, ...rest].join(" ");
+}
 const singular = (rel) => REL[rel] ?? (rel.endsWith("ies") ? rel.slice(0, -3) + "y" : rel.endsWith("s") ? rel.slice(0, -1) : rel);
 const article = (w) => (/^[aeiou]/i.test(w) ? "an " : "a ");
 
@@ -261,7 +274,8 @@ const article = (w) => (/^[aeiou]/i.test(w) ? "an " : "a ");
 // Phrases that start with a verb ("controls the…") and noun phrases ("the jelly-like…")
 // are never mixed in one question, so no option gives itself away by its grammar.
 const verbFirst = (s) => { const w = String(s).split(" ")[0]; return /^[a-z]+s$/.test(w) && !/(ss|us|is|ous)$/.test(w) && !/^(?:cells|plants|animals|organs|parts|things)$/.test(w); };
-function options(answer, pool, n = 3) {
+// prio(p) > 0 marks the best wrong answers (e.g. the other classes of food for "carbohydrates").
+function options(answer, pool, n = 3, prio = () => 0) {
   const a = answer.toLowerCase(), aw = wc(answer), plural = /s$/i.test(answer);
   const seen = new Set([a]);
   const cand = [];
@@ -273,7 +287,7 @@ function options(answer, pool, n = 3) {
     if (!k || seen.has(k) || k.includes(a) || a.includes(k)) continue;
     seen.add(k);
     const lenFit = 1 - Math.min(1, Math.abs(wc(p) - aw) / Math.max(aw, 3));
-    cand.push({ p, r: lenFit * 2 + (/s$/i.test(p) === plural ? 0.5 : 0) + Math.random() * 0.8 });
+    cand.push({ p, r: prio(p) * 3 + lenFit * 2 + (/s$/i.test(p) === plural ? 0.5 : 0) + Math.random() * 0.8 });
   }
   if (cand.length < n) return null;
   const opts = shuffle([answer, ...cand.sort((x, y) => y.r - x.r).slice(0, n).map((x) => matchCase(x.p, answer))]);
@@ -301,7 +315,12 @@ function candidates(facts, opts) {
   const defPool = defs.map((f) => f.def).concat(roles.map((f) => f.desc));
   // Items of other lists, nearest part of the notes first (a plant-cell part is a better wrong answer for "parts of an animal cell" than a word from another topic).
   const itemPool = (exclude) => lists.filter((l) => l !== exclude).sort((a, b) => Math.abs(a.seg - exclude.seg) - Math.abs(b.seg - exclude.seg)).flatMap((l) => l.items).concat(defs.map((f) => f.term));
-  const termPool = (T) => { const t = [...defs.map((f) => f.term), ...roles.map((f) => f.term)].filter((x) => x !== T); return t.length >= 3 ? t : terms.filter((x) => x !== T); };
+  const termPool = (T) => terms.filter((x) => x.toLowerCase() !== T.toLowerCase() && wc(x) <= 4);
+  // Terms that sit in the same list as T ("carbohydrates" -> proteins, vitamins, fats…).
+  const siblingsOf = (T) => new Set(lists.filter((l) => l.items.some((x) => x.toLowerCase() === T.toLowerCase())).flatMap((l) => l.items.map((x) => x.toLowerCase())));
+  const segOf = new Map([...defs, ...roles].map((f) => [f.term.toLowerCase(), f.seg]).concat(lists.flatMap((l) => l.items.map((x) => [x.toLowerCase(), l.seg]))));
+  const sameSeg = (f, p) => segOf.get(String(p).toLowerCase()) === f.seg;
+  const defTerms = new Set(defs.map((f) => f.term.toLowerCase()));   // other concepts make better wrong answers than examples
   const young = opts.level === "p13" || opts.level === "p46";
   const out = [];
   // An option that appears in the question gives the game away (or makes no sense): drop the question.
@@ -315,14 +334,14 @@ function candidates(facts, opts) {
     if (f.kind === "def") {
       const T = f.term, D = f.def, tlc = named(f), be = isAre(T);
       let o = options(D, defPool);
-      if (o) push(f, { key: T, form: "describes", type: "mcq", question: pick([`Which of the following best describes ${tlc}?`, `What ${be} ${tlc}?`, `${ucfirst(tlc)} can best be described as`]), ...o, explanation: `${ucfirst(T)}: ${D}.`, score: 6 });
-      o = options(T, termPool(T));
-      if (o) push(f, { key: T, form: "name", type: "mcq", question: pick([`What is the name given to ${D}?`, `Which term describes ${D}?`]), ...o, explanation: `${ucfirst(tlc)} ${be} ${D}.`, score: 6 + (opts.difficulty === "hard" ? 1 : 0) });
+      if (o) push(f, { key: T, form: "describes", type: "mcq", question: pick([`Which of the following best describes ${tlc}?`, `What ${be} ${tlc}?`, `${ucfirst(tlc)} can best be described as`, `Which statement correctly defines ${tlc}?`, `${ucfirst(tlc)} ${be} best defined as`]), ...o, explanation: `${ucfirst(T)}: ${D}.`, score: 6 });
+      o = options(T, termPool(T), 3, (p) => (siblingsOf(T).has(p.toLowerCase()) ? 2 : 0) + (sameSeg(f, p) ? 1 : 0) + (defTerms.has(p.toLowerCase()) ? 1.5 : 0));
+      if (o) push(f, { key: T, form: "name", type: "mcq", question: pick([`What is the name given to ${D}?`, `Which term describes ${D}?`, `${ucfirst(D)} ${/^(?:the|an?)\s/i.test(D) ? isAre(D.split(" ").slice(1, 3).join(" ")) : be} known as`, `The term for ${D} is`]), ...o, explanation: `${ucfirst(tlc)} ${be} ${D}.`, score: 6 + (opts.difficulty === "hard" ? 1 : 0) });
       push(f, { key: T, form: "tf", type: "tf", question: `${ucfirst(tlc)} ${be} ${D}.`, options: ["True", "False"], answer: 0, explanation: "", score: 3 });
       // A false statement is only worth asking if it is plausible: swap in a related definition.
       const near = defs.filter((d) => d !== f && related(f, d));
       if (near.length) { const d = pick(near); push(f, { key: T, form: "tf", type: "tf", question: `${ucfirst(tlc)} ${be} ${d.def}.`, options: ["True", "False"], answer: 1, explanation: `That describes ${named(d)}. ${ucfirst(tlc)} ${be} ${D}.`, score: 5 }); }
-      push(f, { key: T, form: "define", type: "short", question: young ? `What ${be} ${tlc}?` : pick([`Define ${tlc}.`, `What is meant by ${tlc}?`, `Explain the term "${lc(T)}".`]), answer: `${ucfirst(tlc)} ${be} ${D}.`, keyPoints: keyPoints(D), score: 5 });
+      push(f, { key: T, form: "define", type: "short", question: young ? `What ${be} ${tlc}?` : pick([`Define ${tlc}.`, `What is meant by ${tlc}?`, `Explain the term "${lc(T)}".`, `Give the meaning of ${tlc}.`]), answer: `${ucfirst(tlc)} ${be} ${D}.`, keyPoints: keyPoints(D), score: 5 });
       // Two closely related definitions (diffusion / osmosis, compiler / interpreter): compare them.
       const pair = defs.find((d) => d.id > f.id && related(f, d));
       if (pair && !young) push(f, { key: T + "|" + pair.term, keys: [T, pair.term], form: "distinguish", type: "short", question: `Distinguish between ${lc(T)} and ${lc(pair.term)}.`, answer: `${ucfirst(tlc)} ${be} ${D}. ${ucfirst(named(pair))} ${isAre(pair.term)} ${pair.def}.`, keyPoints: [`${lc(T)}: ${D}`, `${lc(pair.term)}: ${pair.def}`], score: 7 + (opts.difficulty === "hard" ? 2 : 0) });
@@ -334,8 +353,16 @@ function candidates(facts, opts) {
       const w0 = f.desc.split(" ")[0].toLowerCase();
       const verbish = /^[a-z]/.test(f.desc) && !/^(?:is|are|has|was|a|an|the|one|part|site|place|area|region|layer|organ|organelle|structure|store|source|centre|center|unit|small|large|thin|thick|long|short|main)$/.test(w0) && !/(tion|sion|ment|ness|ity|ance|ence|ure|ism|ous|al|ic|ive|ed)$/.test(w0);
       const o = options(f.term, sib.length >= 3 ? sib : sib.concat(terms));
-      const where = f.topic ? ` of ${f.topic.charAt(0).toLowerCase() + f.topic.slice(1)}` : "";
-      if (o) push(f, { key: f.term, form: "role", type: "mcq", question: verbish ? `Which of the following ${f.desc}?` : `Which of the following is ${f.desc.replace(/^(?:an?|the)\s+/i, (x) => x.toLowerCase())}?`, ...o, explanation: `${f.term}: ${f.desc}.`, score: 6 });
+      const where = f.topic ? ` ${/^(?:parts|organs|components|structures|organelles|elements)$/.test(f.rel || "") ? "in" : "of"} ${lc(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase()))}` : "";
+      // Name the kind of thing when the notes say it: "Which organ of the digestive system absorbs water…?"
+      const kind = f.rel && REL[f.rel] && !/^(?:function|role|use|feature|characteristic|property|advantage|disadvantage|reason|effect|cause|duty|objective|problem|quality|principle|factor)$/.test(REL[f.rel]) ? REL[f.rel] : "";
+      const topicL = f.topic ? lc(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase())) : "";
+      const who = kind && topicL && sib.length >= 3 && (f.siblings.length >= 4 || Math.random() < 0.7) ? `Which ${kind} ${/^(?:an?|the)\s/.test(topicL) ? "of " + topicL : "of the " + topicL}` : "Which of the following";
+      // "food is chewed and mixed with saliva" -> "In which organ … is food chewed and mixed with saliva?"
+      const clause = f.desc.match(/^((?:the\s+)?[a-z]+(?:\s[a-z]+)?)\s+(is|are|was|were)\s+(.+)$/i);
+      const stem = clause ? `In ${who.charAt(0).toLowerCase() + who.slice(1)} ${clause[2]} ${clause[1]} ${clause[3]}?`
+        : verbish ? `${who} ${thirdPerson(f.desc)}?` : `${who} is ${f.desc.replace(/^(?:an?|the)\s+/i, (x) => x.toLowerCase())}?`;
+      if (o) push(f, { key: f.term, form: "role", type: "mcq", question: stem, ...o, explanation: `${f.term}: ${f.desc}.`, score: 6 });
       push(f, { key: f.term, form: "state-role", type: "short", question: young ? `What does the ${f.term.toLowerCase()} do?` : pick([`State the function of the ${f.term.toLowerCase()}${where}.`, `What is the role of the ${f.term.toLowerCase()}${where}?`]), answer: `${f.term}: ${f.desc}.`, keyPoints: keyPoints(f.desc), score: 5 });
       const o2 = roles.filter((r) => r !== f && r.seg === f.seg);
       if (o2.length) { const r = pick(o2); push(f, { key: f.term, form: "tf", type: "tf", question: `The ${f.term.toLowerCase()} ${verbish ? r.desc : "is " + r.desc}.`, options: ["True", "False"], answer: 1, explanation: `That is the ${r.term.toLowerCase()}. The ${f.term.toLowerCase()} ${verbish ? f.desc : "is " + f.desc}.`, score: 4 }); }
@@ -349,7 +376,7 @@ function candidates(facts, opts) {
       if (one) {
         const right = pick(f.items);
         const o = options(right, others);
-        if (o) push(f, { key: topic, form: "list-which", type: "mcq", question: `Which of the following is ${article(one)}${one} ${C} ${topic1}${Q}?`, ...o, explanation: `The ${R} ${C} ${topic} are: ${f.items.join(", ")}.`, score: 6 });
+        if (o) push(f, { key: topic, form: "list-which", type: "mcq", question: pick([`Which of the following is ${article(one)}${one} ${C} ${topic1}${Q}?`, `${ucfirst(article(one))}${one} ${C} ${topic1}${Q} is`, `Which of these is one of the ${R} ${C} ${topic}${Q}?`]), ...o, explanation: `The ${R} ${C} ${topic} are: ${f.items.join(", ")}.`, score: 6 });
         if (f.items.length >= 3 && others.length && !young && !Q) {
           // The odd one out should look like the real items (about as long), or it gives itself away.
           const len = f.items.reduce((a, x) => a + wc(x), 0) / f.items.length;
@@ -431,7 +458,7 @@ function choose(cands, n, types, opts) {
   const want = {};
   types.forEach((t, i) => (want[t] = Math.floor(n / types.length) + (i < n % types.length ? 1 : 0)));
   const usedFact = new Set(), usedKey = new Map(), usedForm = {}, segCount = {}, out = [];
-  const formCap = Math.max(2, Math.ceil(n / 4));
+  const formCap = Math.max(2, Math.ceil(n / 5));
   const diffBonus = { easy: { define: 2, describes: 1, gap: 1, "list-which": 1 }, mixed: {}, hard: { distinguish: 2, "list-not": 2, why: 2, name: 1, "why-mcq": 1 } }[opts.difficulty] || {};
   const rank = (c, strict) => {
     if (usedFact.has(c.fact) && strict) return -1;
