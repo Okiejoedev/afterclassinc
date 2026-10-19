@@ -474,3 +474,13 @@ body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in s
 .quick a.go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .quick a.go span { color: inherit; opacity: .85; }
 .code-pill { font: 800 15px/1 var(--f-mono); letter-spacing: .12em; background: var(--hi); color: var(--hi-ink); border-radius: 8px; padding: 6px 10px; border: 0; cursor: pointer; }
+.sample-list { display: grid; gap: 8px; }
+.sample { display: grid; gap: 2px; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; font: inherit; color: var(--ink); }
+.sample:hover { border-color: var(--accent); background: var(--sunk); }
+.sample span { font-size: 13px; color: var(--muted); }
+.steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.steps-list li { display: flex; gap: 12px; align-items: flex-start; }
+.steps-list .tick { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+.steps-list li.done .tick { background: var(--good); border-color: var(--good); color: #fff; }
+.steps-list li.done b { color: var(--muted); }
+.bench.solo { grid-template-columns: minmax(0, 1fr); max-width: 860px; }

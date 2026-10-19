@@ -27,10 +27,10 @@ export async function editorView(id, opts = {}) {
     <div class="page-h"><div><a href="#/quizzes" style="font-size:14px">← Quizzes</a><h1>${id ? "Edit quiz" : "New quiz"} ${statusChip(quiz.review_status)}</h1></div>
       <div class="row"><span class="muted" id="saveState" style="font-size:14px">${id ? "All changes saved" : "Not saved yet"}</span>${id ? `<a class="btn" href="#/print/${id}">Print exam</a>` : ""}
       ${inSchool && id && quiz.review_status !== "submitted" ? `<button class="btn" id="sendReview" type="button">Send for review</button>` : ""}
-      <button class="btn primary big" id="save" type="button">Save quiz</button></div></div>
+      <button class="btn big" id="playLive" type="button">▶ Play live</button><button class="btn primary big" id="save" type="button">Save quiz</button></div></div>
     ${quiz.review_status === "changes" && quiz.review_note ? `<div class="notice"><b>Your HOD asked for changes:</b> ${esc(quiz.review_note)}</div>` : ""}
-    <div class="bench">
-      <section class="panel" aria-labelledby="srcH">
+    <div class="bench${opts.blank ? " solo" : ""}" id="bench">
+      <section class="panel" aria-labelledby="srcH" id="srcPanel" ${opts.blank ? "hidden" : ""}>
         <div class="spread"><h2 id="srcH" style="font-size:22px">1 · Your material</h2><button class="btn sm" id="importBtn" type="button">Import past questions</button></div>
         <label class="drop" id="drop" for="file">
           <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3-3 3 3"/></svg>
@@ -59,8 +59,8 @@ export async function editorView(id, opts = {}) {
         <div class="status" id="status" role="status" aria-live="polite"></div>
       </section>
       <section class="panel" aria-labelledby="qH">
-        <div class="spread"><h2 id="qH" style="font-size:22px">2 · Review questions</h2>
-          <div class="row"><button class="btn sm" id="addQ" type="button">Add question</button><button class="btn sm" id="shuf" type="button">Shuffle</button></div></div>
+        <div class="spread"><h2 id="qH" style="font-size:22px">${opts.blank ? "Your questions" : "2 · Review questions"}</h2>
+          <div class="row">${opts.blank ? `<button class="btn sm ghost" id="showSrc" type="button">Write from notes instead</button>` : ""}<button class="btn sm primary" id="addQ" type="button">+ Add question</button><button class="btn sm" id="shuf" type="button">Shuffle</button></div></div>
         <div class="field"><label class="label" for="title">Quiz title</label><input class="qtitle" id="title" type="text" maxlength="120"></div>
         <div id="fixNote"></div>
         <ol class="qlist" id="qlist"></ol>
@@ -175,11 +175,18 @@ export async function editorView(id, opts = {}) {
     finally { $("#save", v).disabled = false; }
   };
   $("#save", v).onclick = save;
+  // Save first if needed, then open the live game options (teacher.js provides ctx.startLive).
+  $("#playLive", v).onclick = async () => {
+    if (!quiz.questions.length) return toast("Add some questions first", true);
+    if ((dirty || !quiz.id) && !(await save())) return;
+    ctx.startLive?.(quiz);
+  };
   $("#sendReview", v)?.addEventListener("click", async () => {
     if (dirty && !(await save())) return;
     try { await rpc("submit_for_review", { p_quiz: quiz.id }); markDirty(false); toast("Sent to your HOD for review"); location.hash = "#/quizzes"; } catch (e) { toast(e.message, true); }
   });
 
+  $("#showSrc", v)?.addEventListener("click", (e) => { $("#srcPanel", v).hidden = false; $("#bench", v).classList.remove("solo"); e.target.remove(); });
   $("#shuf", v).onclick = () => { quiz.questions = shuffle(quiz.questions); markDirty(); renderList(); };
   $("#addQ", v).onclick = () => {
     if (editing) return toast("Press Done on the question you're editing first", true);
@@ -259,6 +266,7 @@ export async function editorView(id, opts = {}) {
     }
   });
   renderList();
+  if (opts.blank) $("#addQ", v).click();
 }
 
 /* ----- pictures ----- */
@@ -298,7 +306,7 @@ function editorHTML(x) {
       <option value="mcq" ${x.type === "mcq" ? "selected" : ""}>Multiple choice</option><option value="tf" ${x.type === "tf" ? "selected" : ""}>True / False</option>
       <option value="short" ${x.type === "short" ? "selected" : ""}>Written / theory</option><option value="poll" ${x.type === "poll" ? "selected" : ""}>Poll (no right answer, live only)</option>
       <option value="word" ${x.type === "word" ? "selected" : ""}>Word cloud (live only)</option></select>
-      ${x.type !== "poll" && x.type !== "word" ? `<label class="label" for="ed-marks" style="margin-left:auto">Marks</label><input id="ed-marks" type="number" min="0" step="0.5" style="width:80px" value="${x.marks ?? ""}" placeholder="default">` : ""}</div>
+      ${x.type !== "poll" && x.type !== "word" ? `<label class="label" for="ed-marks" style="margin-left:auto">Marks</label><input id="ed-marks" type="number" min="0" step="0.5" style="width:80px" value="${x.marks ?? ""}" placeholder="1">` : ""}</div>
     <label class="label" for="ed-q">Question</label>${symbolBarHTML()}
     <textarea id="ed-q" rows="3" placeholder="For sub-parts, put (a), (b) on new lines. For maths use $x^2$ or the buttons above.">${esc(x.question)}</textarea>
     <div class="row">${x.image ? `${qimg(x, "qimg sm")}<button class="btn sm ghost danger" data-act="rmimg" type="button">Remove picture</button>` : ""}<label class="btn sm" for="ed-img">${x.image ? "Change picture" : "Add picture / diagram"}</label><input id="ed-img" type="file" accept="image/*" hidden></div>

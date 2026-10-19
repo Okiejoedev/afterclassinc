@@ -12,6 +12,11 @@
 </style>
 </head>
 <body>
-<main><h1>That page doesn't exist</h1><p>Joining a quiz? <a href="/">Enter your game PIN here</a>.</p></main>
+<main><h1>That page doesn't exist</h1><p>Joining a quiz? <a id="home" href="/">Go to the home page</a> and enter your game PIN.</p></main>
+<script>
+  // On GitHub Pages the site lives in a folder (/afterclassinc/), not at the root.
+  var seg = location.pathname.split("/")[1];
+  if (location.hostname.endsWith("github.io") && seg) document.getElementById("home").href = "/" + seg + "/";
+</script>
 </body>
 </html>

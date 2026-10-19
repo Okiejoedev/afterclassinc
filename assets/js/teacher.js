@@ -8,6 +8,7 @@ import { examView } from "./exam.js";
 import { editorView } from "./editor.js";
 import { classesView, classView } from "./classes.js";
 import { overviewView } from "./overview.js";
+import { sampleDialog } from "./samples.js";
 import { sessionsView, reportView, reviewsView, reviewView } from "./report.js";
 
 const app = $("#app");
@@ -96,7 +97,7 @@ async function route() {
   const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");
   try {
-    if (page === "new") return await editorView(null, { importNow: query === "import" });
+    if (page === "new") return await editorView(null, { importNow: query === "import", blank: query === "blank" });
     if (page === "edit") return await editorView(id);
     if (page === "print") return await examView(id, frame);
     if (page === "classes") return await classesView();
@@ -142,13 +143,20 @@ async function autoPurge() {
 async function quizzesView() {
   const w = words();
   const v = frame("quizzes", `<div class="page-h"><div><span class="label">Your library</span><h1>Quizzes</h1></div>
-    <div class="row"><a class="btn big" href="#/new?import">Import past questions</a><a class="btn primary big" href="#/new">+ New quiz from notes</a></div></div><div id="list"><p class="muted">Loading…</p></div>`);
+    <div class="row"><details class="menu"><summary class="btn primary big">+ New quiz ▾</summary><div class="menu-list" style="right:0;left:auto">
+        <a href="#/new"><b>From your notes</b><span>Upload a PDF or Word file, or paste notes</span></a>
+        <a href="#/new?blank"><b>Type your own questions</b><span>Start empty and add questions one by one</span></a>
+        <a href="#/new?import"><b>Import past questions</b><span>Paste questions you already have</span></a>
+        <button type="button" data-sample><b>Sample quiz</b><span>Ready-made, play it right now</span></button>
+      </div></details></div></div><div id="list"><p class="muted">Loading…</p></div>`);
+  v.querySelector("[data-sample]").onclick = (e) => { e.target.closest("details").removeAttribute("open"); sampleDialog(() => quizzesView()); };
   const list = await q(sb.from("quizzes").select("id,title,questions,updated_at,review_status,review_note").eq("owner_id", ctx.user.id).order("updated_at", { ascending: false }));
   const box = $("#list", v);
   if (!list.length) {
     box.innerHTML = `<div class="empty"><h2 style="font-size:22px;margin-bottom:6px">No quizzes yet</h2>
-      <p style="margin:0 0 14px">Upload your lesson notes (PDF, Word or text) and Afterclass writes the questions. You can also paste in past questions you already have.</p>
-      <div class="row" style="justify-content:center"><a class="btn primary" href="#/new">Create your first quiz</a><a class="btn" href="#/new?import">Import past questions</a></div></div>`;
+      <p style="margin:0 0 14px">Upload your lesson notes (PDF, Word or text) and Afterclass writes the questions, or type your own. Want to see a live game first? Add a sample quiz and press <b>▶ Play live</b>.</p>
+      <div class="row" style="justify-content:center"><a class="btn primary" href="#/new">Quiz from my notes</a><a class="btn" href="#/new?blank">Type my own</a><button class="btn" id="sampleEmpty" type="button">Add a sample quiz</button></div></div>`;
+    $("#sampleEmpty", box).onclick = () => sampleDialog(() => quizzesView());
     return;
   }
   const inSchool = !!ctx.head?.school;
@@ -161,15 +169,15 @@ async function quizzesView() {
       ${z.review_status === "changes" && z.review_note ? `<div class="notice" style="padding:6px 10px;font-size:13px"><b>HOD:</b> ${esc(z.review_note)}</div>` : ""}
       <div class="meta">Edited ${fmtDate(z.updated_at)}</div>
       <div class="actions">
-        <details class="menu"><summary class="btn sm primary">Start ▾</summary><div class="menu-list">
-          <button data-act="live" type="button"><b>Live game</b><span>${w.Learners} join on their phones with a PIN</span></button>
+        <button class="btn sm primary" data-act="live" type="button" title="${w.Learners} join on their phones with a PIN; leaderboard after each question">▶ Play live</button>
+        <details class="menu"><summary class="btn sm">More ways ▾</summary><div class="menu-list">
           <button data-act="teams" type="button"><b>Class teams (no phones)</b><span>Show on the board; you score the teams</span></button>
           <button data-act="assign" type="button"><b>Assignment / online test</b><span>Self-paced, with optional timer and class list</span></button>
           <a href="#/print/${z.id}"><b>Print exam paper</b><span>PDF or Word, with your school heading</span></a>
           <a href="../index.html?preview=${z.id}" target="_blank" rel="noopener"><b>Try it as a ${w.learner}</b><span>Opens a preview; nothing is saved</span></a>
         </div></details>
         <a class="btn sm" href="#/edit/${z.id}">Edit</a>
-        <details class="menu"><summary class="btn sm ghost" aria-label="More actions">More ▾</summary><div class="menu-list">
+        <details class="menu"><summary class="btn sm ghost" aria-label="More actions">⋯</summary><div class="menu-list">
           ${inSchool && z.review_status !== "submitted" ? `<button data-act="review" type="button"><b>Send for review</b><span>Your HOD approves it before printing</span></button>` : ""}
           <button data-act="dup" type="button"><b>Duplicate</b></button>
           <button data-act="del" type="button" class="danger"><b>Delete</b></button>
@@ -208,6 +216,7 @@ async function classOptions() {
   return `<option value="">No class list (anyone with the PIN, nicknames)</option>${cls.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.students?.[0]?.count ?? 0} on list)</option>`).join("")}`;
 }
 
+ctx.startLive = (z) => hostDialog(z);
 async function hostDialog(z) {
   if (!guardQuiz(z, true)) return;
   const kind = ctx.kind, w = words();

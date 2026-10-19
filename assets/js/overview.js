@@ -3,6 +3,7 @@
 import { sb, q } from "./sb.js";
 import { $, esc, toast, fmtDate } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
+import { sampleDialog } from "./samples.js";
 
 const isOpen = (s) => s.kind === "assignment"
   ? s.status === "open" && (!s.closes_at || new Date(s.closes_at) > new Date())
@@ -15,6 +16,8 @@ async function loadClasses() {
   try { return await q(sb.from("classes").select("id,name,join_code,students(count)").eq("owner_id", ctx.user.id).order("name")); }
   catch { return q(base()); }
 }
+
+const step = (done, title, body) => `<li class="${done ? "done" : ""}"><span class="tick" aria-hidden="true">${done ? "✓" : ""}</span><div><b>${title}</b>${done ? ` <span class="chip live">DONE</span>` : ""}<p class="muted" style="margin:2px 0 0;font-size:14px">${body}</p></div></li>`;
 
 export async function overviewView() {
   const w = words();
@@ -41,11 +44,16 @@ export async function overviewView() {
       <a class="stat link" href="#/sessions"><span class="label">Took part</span><b>${sessions.reduce((a, s) => a + people(s), 0)}</b></a>
     </div>
     <div class="quick">
-      <a class="go" href="#/new"><b>+ New quiz from notes</b><span>Upload a PDF, Word file or paste notes</span></a>
-      <a href="#/new?import"><b>Import past questions</b><span>Paste questions you already have</span></a>
-      <a href="#/quizzes"><b>Start a live game</b><span>Pick a quiz, then Start → Live game</span></a>
-      <a href="#/classes"><b>Class lists &amp; codes</b><span>Let ${w.learners} join your classes</span></a>
+      <a class="go" href="#/new"><b>+ Quiz from your notes</b><span>Upload a PDF, Word file or paste notes</span></a>
+      <a href="#/new?blank"><b>Type your own questions</b><span>Build a quiz question by question</span></a>
+      <a href="#/quizzes"><b>▶ Play a live game</b><span>Pick a quiz and press Play live</span></a>
+      <a href="#" data-sample><b>Try a sample quiz</b><span>Ready-made, play it in a minute</span></a>
     </div>
+    ${!quizzes.length || !sessions.length ? `<section class="panel"><h2 class="h2">Getting started</h2><ol class="steps-list">
+      ${step(quizzes.length > 0, "Make a quiz", `From your notes, by typing questions, or <a href="#" data-sample>add a sample quiz</a>.`)}
+      ${step(sessions.some((s) => s.kind === "live"), "Play it as a live game", `Press <b>▶ Play live</b> on a quiz. Put the host screen on a projector or share it on Zoom; ${w.learners} join on their phones with the PIN. A leaderboard shows after each question and a podium at the end.`)}
+      ${step(classes.length > 0, "Add your class", `Create a class list, then give ${w.learners} the class code so tests you set appear on their dashboard.`)}
+    </ol></section>` : ""}
     ${running.length ? `<section class="panel"><div class="spread"><h2 class="h2">Happening now</h2><span class="chip live">● LIVE</span></div>
       <ul class="todo">${running.map((s) => `<li><div><b>${esc(s.title)}</b><div class="muted" style="font-size:13px"><span class="chip">${kindName(s)}</span> PIN <span class="num">${esc(s.pin)}</span> · ${people(s)} joined${s.closes_at ? ` · due ${esc(fmtDate(s.closes_at))}` : ""}</div></div>
         <div class="row">${s.kind === "live" ? `<a class="btn primary sm" href="host.html?s=${s.id}">Host screen</a>` : ""}<a class="btn sm" href="#/report/${s.id}">Results</a></div></li>`).join("")}</ul></section>` : ""}
@@ -73,6 +81,7 @@ export async function overviewView() {
       </aside>
     </div>`;
 
+  v.querySelectorAll("[data-sample]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); sampleDialog(() => (location.hash = "#/quizzes")); }));
   const copy = (t, msg) => navigator.clipboard?.writeText(t).then(() => toast(msg), () => toast(t));
   v.querySelectorAll("[data-code]").forEach((b) => (b.onclick = () => copy(b.dataset.code, "Class code copied")));
   $("#copySite", v).onclick = () => copy(new URL("../", location.href).href, "Link copied");

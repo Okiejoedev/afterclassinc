@@ -1,5 +1,10 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+
+// The Supabase library is one file in assets/vendor, loaded by each page before
+// this module (a CDN "+esm" import fetched ~10 files one after another, which
+// often stalled on slow mobile data).
+const lib = globalThis.supabase;
+if (!lib?.createClient) throw new Error("Afterclass could not load. Check your connection and refresh the page.");
 
 // Only the address itself is needed (https://abcd.supabase.co). People often paste
 // the "RESTful endpoint" (…/rest/v1/) or a dashboard link, so clean it up here.
@@ -18,7 +23,15 @@ export const configured = !!URL_OK && !SUPABASE_URL.includes("YOUR-PROJECT") && 
 export const configProblem = configured ? "" : !URL_OK && !SUPABASE_URL.includes("YOUR-PROJECT")
   ? `The SUPABASE_URL in assets/js/config.js is not a project address. It should look like https://abcdefgh.supabase.co (Supabase → Project Settings → API → Project URL), not a link to the Supabase dashboard.`
   : "";
-export const sb = configured ? createClient(URL_OK, KEY) : null;
+// A stalled request on a weak network would otherwise wait forever and leave the
+// page on "Loading…". Give up after 25 s (AI question writing gets longer).
+function fetchWithTimeout(url, opts = {}) {
+  const ctl = new AbortController(), ms = String(url).includes("/functions/v1/") ? 180000 : 25000;
+  const t = setTimeout(() => ctl.abort(), ms);
+  opts.signal?.addEventListener("abort", () => ctl.abort());
+  return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
+}
+export const sb = configured ? lib.createClient(URL_OK, KEY, { global: { fetch: fetchWithTimeout } }) : null;
 
 // Calls a database function and turns errors into plain messages.
 export async function rpc(name, args) {
@@ -33,6 +46,7 @@ export async function rpc(name, args) {
 
 export function friendly(msg = "") {
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return "No connection. Check your internet and try again.";
+  if (/abort/i.test(msg)) return "The connection is too slow right now. Check your internet and try again.";
   if (/Invalid path specified/i.test(msg)) return "Afterclass can't reach your database. In assets/js/config.js, SUPABASE_URL must be just https://your-project.supabase.co with nothing after it.";
   if (/Invalid API key|No API key|apikey/i.test(msg)) return "The SUPABASE_ANON_KEY in assets/js/config.js is wrong. Copy the Publishable key (or anon public key) from Supabase → Project Settings → API Keys.";
   if (/relation .* does not exist|Could not find the (function|table)/i.test(msg)) return "The database isn't set up yet. Run supabase/schema.sql in Supabase → SQL Editor (README step 2).";

@@ -10,19 +10,10 @@
 <meta name="theme-color" content="#111733">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/app.css">
-<script>
-  // Skip web fonts on slow or data-saving connections (system fonts look fine).
-  (function () {
-    var c = navigator.connection || {};
-    if (c.saveData || /(^|-)2g$/.test(c.effectiveType || "")) { document.documentElement.className += " lite"; return; }
-    var l = document.createElement("link"); l.rel = "stylesheet";
-    l.href = "https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=JetBrains+Mono:wght@700;800&display=swap";
-    document.head.appendChild(l);
-  })();
-</script>
+<script src="assets/js/boot.js"></script>
 </head>
 <body class="stage">
-<div id="app"><div class="phone"><p class="muted">Loading…</p></div></div>
+<div id="app"><div class="phone"><p class="muted boot">Loading…</p></div></div>
 <div id="announce" class="sr-only" aria-live="assertive"></div>
 
 <!-- Shown when the browser can't run the quiz (Opera Mini "extreme" mode, very old phones). -->
@@ -36,6 +27,7 @@
 <script>
   if (/Opera Mini/i.test(navigator.userAgent) || window.operamini) { document.getElementById("app").hidden = true; document.getElementById("oldBrowser").hidden = false; }
 </script>
+<script src="assets/vendor/supabase.js" defer></script>
 <script type="module" src="assets/js/student.js"></script>
 </body>
 </html>
