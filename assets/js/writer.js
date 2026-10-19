@@ -184,6 +184,9 @@ function extract(segs) {
         f = { kind: "def", term: cleanTerm(m[1]), def: cleanDef(m[3]) };
       else if ((m = plain.match(/^([A-Za-z][\w-]*(?:\s[a-z][\w-]*)?s)\s+are\s+([a-z][\w-]*\s.+)$/)) && cleanTerm(m[1]) && !WEAK_DEF.has(m[2].split(" ")[0]) && !/(ed|ly|en|wn)$/.test(m[2].split(" ")[0]) && wc(m[2]) >= 3 && wc(m[2]) <= 30)
         f = { kind: "def", term: cleanTerm(m[1]), def: cleanDef(m[2]) };
+      // "Small talk is light conversation about … that helps …": a longer description with a noun phrase.
+      else if ((m = plain.match(/^([A-Z][\w-]*(?:\s[a-z][\w-]*){0,2})\s+is\s+([a-z][\w-]*\s[a-z][\w-]*\s.+)$/)) && cleanTerm(m[1]) && !WEAK_DEF.has(m[2].split(" ")[0]) && !/(ed|ly|en|wn|ing|ful|ive|ous|able|ible|ant|ent)$/.test(m[2].split(" ")[0]) && wc(m[2]) >= 6 && wc(m[2]) <= 30 && /\b(that|which|who|of|for|about|used|by)\b/.test(m[2]))
+        f = { kind: "def", term: cleanTerm(m[1]), def: cleanDef(m[2]) };
       if (f) {
         f.art = articleOf(plain, f.term);
         // "High-level languages are languages that…" says nothing on its own: keep the clause.
@@ -289,7 +292,8 @@ function options(answer, pool, n = 3, prio = () => 0) {
     const lenFit = 1 - Math.min(1, Math.abs(wc(p) - aw) / Math.max(aw, 3));
     cand.push({ p, r: prio(p) * 3 + lenFit * 2 + (/s$/i.test(p) === plural ? 0.5 : 0) + Math.random() * 0.8 });
   }
-  if (cand.length < n) return null;
+  if (cand.length < 2) return null;       // a 3-option question beats no question when the notes are short
+  n = Math.min(n, cand.length);
   const opts = shuffle([answer, ...cand.sort((x, y) => y.r - x.r).slice(0, n).map((x) => matchCase(x.p, answer))]);
   return { options: opts, answer: opts.indexOf(answer) };
 }
@@ -337,7 +341,7 @@ function candidates(facts, opts) {
       if (o) push(f, { key: T, form: "describes", type: "mcq", question: pick([`Which of the following best describes ${tlc}?`, `What ${be} ${tlc}?`, `${ucfirst(tlc)} can best be described as`, `Which statement correctly defines ${tlc}?`, `${ucfirst(tlc)} ${be} best defined as`]), ...o, explanation: `${ucfirst(T)}: ${D}.`, score: 6 });
       o = options(T, termPool(T), 3, (p) => (siblingsOf(T).has(p.toLowerCase()) ? 2 : 0) + (sameSeg(f, p) ? 1 : 0) + (defTerms.has(p.toLowerCase()) ? 1.5 : 0));
       if (o) push(f, { key: T, form: "name", type: "mcq", question: pick([`What is the name given to ${D}?`, `Which term describes ${D}?`, `${ucfirst(D)} ${/^(?:the|an?)\s/i.test(D) ? isAre(D.split(" ").slice(1, 3).join(" ")) : be} known as`, `The term for ${D} is`]), ...o, explanation: `${ucfirst(tlc)} ${be} ${D}.`, score: 6 + (opts.difficulty === "hard" ? 1 : 0) });
-      push(f, { key: T, form: "tf", type: "tf", question: `${ucfirst(tlc)} ${be} ${D}.`, options: ["True", "False"], answer: 0, explanation: "", score: 3 });
+      push(f, { key: T, form: "tf-copy", type: "tf", question: `${ucfirst(tlc)} ${be} ${D}.`, options: ["True", "False"], answer: 0, explanation: "", score: 3 });
       // A false statement is only worth asking if it is plausible: swap in a related definition.
       const near = defs.filter((d) => d !== f && related(f, d));
       if (near.length) { const d = pick(near); push(f, { key: T, form: "tf", type: "tf", question: `${ucfirst(tlc)} ${be} ${d.def}.`, options: ["True", "False"], answer: 1, explanation: `That describes ${named(d)}. ${ucfirst(tlc)} ${be} ${D}.`, score: 5 }); }
@@ -464,7 +468,7 @@ function choose(cands, n, types, opts) {
     if (usedFact.has(c.fact) && strict) return -1;
     const keys = c.keys || [c.key];
     if (keys.some((k) => (usedKey.get(String(k).toLowerCase()) || 0) >= (strict ? 1 : 2))) return -1;
-    const cap = c.form === "tf" ? Infinity : c.form === "distinguish" ? Math.max(1, Math.ceil(n / 8)) : formCap;
+    const cap = c.form === "tf" ? Infinity : c.form === "tf-copy" ? Math.max(1, Math.ceil(n / 10)) : c.form === "distinguish" ? Math.max(1, Math.ceil(n / 8)) : formCap;
     if ((usedForm[c.form] || 0) >= (strict ? cap : cap * 2)) return -1;
     return c.score + (diffBonus[c.form] || 0) - (segCount[c.seg] || 0) * 1.5 - (usedForm[c.form] || 0) * 0.8 + Math.random() * 1.5;
   };
@@ -502,6 +506,23 @@ function nearDuplicate(c, list) {
   });
 }
 
+// Books and slides repeat a header or footer on every page ("How to Talk to Anyone 19",
+// "Copyright 2003 by …"). Lines that recur on many pages, page numbers and copyright /
+// web-address lines are not lesson content.
+const BOILER = /copyright|©|all rights reserved|\bisbn\b|printed in|www\.|https?:\/\/|^\s*(?:page\s*)?\d+\s*(?:of\s*\d+)?\s*$|^\s*[☆★*]+\s*\d/i;
+function stripPageFurniture(text) {
+  const lines = text.split(/\r?\n/);
+  const pages = (text.match(/^\[Page \d+\]$/gm) || []).length;
+  const norm = (l) => l.toLowerCase().replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+  const count = new Map();
+  for (const l of lines) { const k = norm(l); if (k && k.length < 90 && !/^\[page #\]$/.test(k)) count.set(k, (count.get(k) || 0) + 1); }
+  const limit = Math.max(3, Math.ceil(pages * 0.3));
+  return lines.filter((l) => {
+    if (/^\[Page \d+\]$/.test(l.trim())) return true;
+    return !BOILER.test(l) && !(pages >= 3 && (count.get(norm(l)) || 0) >= limit);
+  }).join("\n");
+}
+
 /* ---------------- entry point ---------------- */
 // opts: { count, types: ["mcq","tf","short"], difficulty: "easy"|"mixed"|"hard", level }
 export function writeQuestions(text, opts) {
@@ -511,7 +532,7 @@ export function writeQuestions(text, opts) {
   for (const m of String(text).matchAll(/\b([A-Z][a-z]+)[ \t]+([A-Z][a-z]+)\b/g)) if (!/^(The|A|An|In|On|At|For|And|But|Of|It|This|These)$/.test(m[1])) { proper.add(m[1]); proper.add(m[2]); }
   // A word the notes also write in lower case is not a name ("Federalism" heading, "federalism" in text).
   for (const w of String(text).match(/\b[a-z][a-z-]+\b/g) || []) proper.delete(ucfirst(w));
-  const segs = parse(String(text));
+  const segs = parse(stripPageFurniture(String(text)));
   const facts = extract(segs);
   const cands = candidates(facts, o).filter((c) => o.types.includes(c.type));
   const chosen = choose(cands, o.count, o.types.filter((t) => cands.some((c) => c.type === t)), o);

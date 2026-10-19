@@ -6,6 +6,7 @@ import { ctx, frame, words, statusChip } from "./shell.js";
 import { loadHeader, schoolView } from "./school.js";
 import { overviewView } from "./overview.js";
 import { sampleDialog } from "./samples.js";
+import { VERSION } from "./version.js";
 // The editor, exam printer, class lists and reports load only when opened, so the
 // dashboard appears quickly on slow connections.
 const editor = () => import("./editor.js"), exam = () => import("./exam.js");
@@ -37,6 +38,27 @@ if (!configured) {
   if (!recovering) route();
 }
 addEventListener("hashchange", () => route());
+
+// A dashboard left open keeps running the code it loaded. Check now and then whether a
+// newer version is live (e.g. a better question writer) and offer to refresh.
+let updateShown = false;
+async function checkForUpdate() {
+  if (updateShown || document.hidden) return;
+  try {
+    const txt = await (await fetch(new URL("../assets/js/version.js", location.href), { cache: "no-store" })).text();
+    const live = (txt.match(/VERSION = "([^"]+)"/) || [])[1];
+    if (!live || live === VERSION) return;
+    updateShown = true;
+    const bar = document.createElement("div");
+    bar.className = "update-bar"; bar.setAttribute("role", "status");
+    bar.innerHTML = `<span>Afterclass has been updated. Refresh to use the newest version.</span><button class="btn sm primary" type="button">Refresh</button>`;
+    bar.querySelector("button").onclick = () => location.reload();
+    document.body.appendChild(bar);
+  } catch { /* offline; try again later */ }
+}
+setInterval(checkForUpdate, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", checkForUpdate);
+setTimeout(checkForUpdate, 20000);
 
 function renderAuth(mode = "in") {
   app.innerHTML = `<div class="auth panel">
