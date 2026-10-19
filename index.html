@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Afterclass · Join a quiz</title>
+<meta name="description" content="Enter your game PIN to join your class quiz, test or webinar poll.">
+<meta property="og:title" content="Afterclass · Join a quiz">
+<meta property="og:description" content="Enter your game PIN to join your class quiz, test or webinar poll.">
+<meta name="theme-color" content="#111733">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+<script>
+  // Skip web fonts on slow or data-saving connections (system fonts look fine).
+  (function () {
+    var c = navigator.connection || {};
+    if (c.saveData || /(^|-)2g$/.test(c.effectiveType || "")) { document.documentElement.className += " lite"; return; }
+    var l = document.createElement("link"); l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=JetBrains+Mono:wght@700;800&display=swap";
+    document.head.appendChild(l);
+  })();
+</script>
+</head>
+<body class="stage">
+<div id="app"><div class="phone"><p class="muted">Loading…</p></div></div>
+<div id="announce" class="sr-only" aria-live="assertive"></div>
+
+<!-- Shown when the browser can't run the quiz (Opera Mini "extreme" mode, very old phones). -->
+<div id="oldBrowser" class="phone" hidden>
+  <h1 style="font-size:28px">Please open this link in Chrome</h1>
+  <p>Your browser can't run the quiz. Opera Mini's data-saving mode and some very old browsers don't support it.</p>
+  <p><b>What to do:</b> copy this page's address and open it in <b>Chrome</b>, <b>Firefox</b>, <b>Samsung Internet</b> or <b>Opera</b> (the normal Opera, not Opera Mini). In Opera Mini you can also turn off <i>Data savings → Extreme</i>.</p>
+</div>
+<noscript><div class="phone"><h1 style="font-size:28px">Turn on JavaScript</h1><p>This quiz needs JavaScript. Open the link in Chrome or another modern browser.</p></div></noscript>
+<script nomodule>document.getElementById("app").hidden = true; document.getElementById("oldBrowser").hidden = false;</script>
+<script>
+  if (/Opera Mini/i.test(navigator.userAgent) || window.operamini) { document.getElementById("app").hidden = true; document.getElementById("oldBrowser").hidden = false; }
+</script>
+<script type="module" src="assets/js/student.js"></script>
+</body>
+</html>
