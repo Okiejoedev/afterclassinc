@@ -4,12 +4,12 @@ import { sb, configured, configProblem, friendly, rpc, q } from "./sb.js";
 import { $, esc, toast, ask, dialog, fmtDate, LOGO, store } from "./ui.js";
 import { ctx, frame, words, statusChip } from "./shell.js";
 import { loadHeader, schoolView } from "./school.js";
-import { examView } from "./exam.js";
-import { editorView } from "./editor.js";
-import { classesView, classView } from "./classes.js";
 import { overviewView } from "./overview.js";
 import { sampleDialog } from "./samples.js";
-import { sessionsView, reportView, reviewsView, reviewView } from "./report.js";
+// The editor, exam printer, class lists and reports load only when opened, so the
+// dashboard appears quickly on slow connections.
+const editor = () => import("./editor.js"), exam = () => import("./exam.js");
+const classes = () => import("./classes.js"), report = () => import("./report.js");
 
 const app = $("#app");
 const SITE = new URL("../", location.href).href;          // student join page
@@ -97,15 +97,16 @@ async function route() {
   const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");
   try {
-    if (page === "new") return await editorView(null, { importNow: query === "import", blank: query === "blank" });
-    if (page === "edit") return await editorView(id);
-    if (page === "print") return await examView(id, frame);
-    if (page === "classes") return await classesView();
-    if (page === "class") return await classView(id);
-    if (page === "sessions") return await sessionsView();
-    if (page === "report") return await reportView(id);
-    if (page === "reviews") return await reviewsView();
-    if (page === "review") return await reviewView(id);
+    if (page !== "home" && page !== "quizzes" && page !== "school" && page) frame(page === "new" || page === "edit" || page === "print" ? "quizzes" : page === "class" ? "classes" : page === "report" ? "sessions" : page === "review" ? "reviews" : page, `<p class="muted">Loading…</p>`);
+    if (page === "new") return await (await editor()).editorView(null, { importNow: query === "import", blank: query === "blank" });
+    if (page === "edit") return await (await editor()).editorView(id);
+    if (page === "print") return await (await exam()).examView(id, frame);
+    if (page === "classes") return await (await classes()).classesView();
+    if (page === "class") return await (await classes()).classView(id);
+    if (page === "sessions") return await (await report()).sessionsView();
+    if (page === "report") return await (await report()).reportView(id);
+    if (page === "reviews") return await (await report()).reviewsView();
+    if (page === "review") return await (await report()).reviewView(id);
     if (page === "school") { await schoolView(frame); ctx.head = await loadHeader(); return; }
     if (page === "quizzes") return await quizzesView();
     return await overviewView();
