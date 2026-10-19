@@ -1,7 +1,9 @@
 // Student / participant side: join with a PIN, play a live game on the phone,
-// or do a self-paced assignment / timed online test. No account needed.
+// or do a self-paced assignment / timed online test. No account needed; with
+// no PIN in the link the home page (home.js) is shown instead.
 // ?preview=<quizId> lets a signed-in teacher try a quiz without saving anything.
 import { sb, configured, rpc, q } from "./sb.js";
+import { home } from "./home.js";
 import { $, esc, rt, LET, store, toast, confetti, LOGO, qimg, renderMath, speak, canSpeak, questionSpeech, rng, seededShuffle, dialog } from "./ui.js";
 
 const app = $("#app");
@@ -26,7 +28,27 @@ else if (me && params.get("pin")) { // opened a new link while still in an old g
   const pin = params.get("pin").replace(/\D/g, "");
   store.del(KEY); me = null; nameScreen(pin);
 }
-else { const pin = (params.get("pin") || "").replace(/\D/g, ""); pin.length === 6 ? nameScreen(pin) : joinScreen(pin); }
+else { const pin = (params.get("pin") || "").replace(/\D/g, ""); pin.length === 6 ? nameScreen(pin) : goHome(); }
+
+function goHome(msg = "") { stop(); home({ pin: (p) => nameScreen(p), joinAs }, msg); }
+
+// Signed-in students join straight from their dashboard with their account name.
+async function joinAs(pin, name) {
+  if (!name) return nameScreen(pin);
+  phone(`<div class="wait"><div class="spinner"></div><p class="muted">Joining…</p></div>`, false);
+  try {
+    me = await rpc("join_session", { p_pin: pin, p_nickname: name, p_student_no: null, p_email: null });
+    store.set(KEY, me);
+    history.replaceState(null, "", location.pathname);
+    if (me.resumed) toast(me.finished ? "You have already handed this in. Here is your result." : "Welcome back. Carrying on where you left off.");
+    resume();
+  } catch (err) {
+    if (err.message === "STUDENT_NO_REQUIRED") return nameScreen(pin, "", { roster: true, nick: "" });
+    if (/valid email/i.test(err.message)) return nameScreen(pin, "", { email: true, nick: name });
+    if (/PIN|closed|locked/i.test(err.message)) return goHome(err.message);
+    nameScreen(pin, err.message, { nick: name });
+  }
+}
 
 /* ================= joining ================= */
 function joinScreen(pinPrefill = "", err = "") {
@@ -37,7 +59,7 @@ function joinScreen(pinPrefill = "", err = "") {
       <input id="pin" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="000 000" value="${esc(pinPrefill)}" required aria-describedby="err">
       <button class="btn primary" type="submit">Enter</button>
       <p class="status" id="err" role="alert" style="text-align:center;color:#FF8E86">${esc(err)}</p>
-      <p class="muted" style="text-align:center;font-size:14px;margin-top:8vh">Teacher or presenter? <a href="teacher/" style="color:var(--hi)">Open your dashboard</a><br><a href="privacy.html" style="color:var(--stage-muted)">Privacy notice</a></p>
+      <p class="muted" style="text-align:center;font-size:14px;margin-top:8vh"><a href="./" style="color:var(--hi)">← Back to home</a><br><a href="privacy.html" style="color:var(--stage-muted)">Privacy notice</a></p>
     </form>`, false);
   const pin = $("#pin");
   if (!pinPrefill) pin.focus();
@@ -92,7 +114,7 @@ function nameScreen(pin, err = "", need = {}) {
     }
   };
 }
-function leave(msg = "") { store.del(KEY); me = null; stop(); joinScreen("", msg); }
+function leave(msg = "") { store.del(KEY); me = null; goHome(msg); }
 function stop() {
   clearInterval(poll); cancelAnimationFrame(timerRAF); clearInterval(sheetTimer);
   if (channel) { sb.removeChannel(channel); channel = null; }

@@ -12,9 +12,11 @@ export async function classesView() {
       <div class="field"><label class="label" for="cName">New class</label><input id="cName" type="text" maxlength="80" placeholder="e.g. JSS 2A, SS 3 Science, BIO 201 (2026/27)"></div>
       <button class="btn primary" type="submit">Create class</button></form>
     <div id="list"><p class="muted">Loading…</p></div>`);
-  const rows = await q(sb.from("classes").select("id,name,created_at,students(count)").eq("owner_id", ctx.user.id).order("name"));
+  const sel = (cols) => q(sb.from("classes").select(cols).eq("owner_id", ctx.user.id).order("name"));
+  const rows = await sel("id,name,created_at,join_code,students(count)").catch(() => sel("id,name,created_at,students(count)"));
   $("#list", v).innerHTML = rows.length ? `<div class="grid-cards">${rows.map((c) => `<a class="qcard" href="#/class/${c.id}" style="text-decoration:none;color:inherit"><h3>${esc(c.name)}</h3>
-      <div class="meta"><span class="num">${c.students?.[0]?.count ?? 0} ${w.learners}</span><span>Created ${fmtDate(c.created_at)}</span></div></a>`).join("")}</div>`
+      <div class="meta"><span class="num">${c.students?.[0]?.count ?? 0} ${w.learners}</span><span>Created ${fmtDate(c.created_at)}</span></div>
+      ${c.join_code ? `<div class="meta">Class code <span class="code-pill" style="cursor:inherit">${esc(c.join_code)}</span></div>` : ""}</a>`).join("")}</div>`
     : `<div class="empty">No class lists yet. Create one above, then paste names from Excel or your register.</div>`;
   $("#newClass", v).onsubmit = async (e) => {
     e.preventDefault();
@@ -55,8 +57,11 @@ export async function classView(id) {
   if (!cls) { v.innerHTML = `<div class="notice">Class not found. <a href="#/classes">Back</a></div>`; return; }
   const students = await q(sb.from("students").select("*").eq("class_id", id).order("full_name"));
   v.innerHTML = `
-    <div class="page-h"><div><a href="#/classes" style="font-size:14px">← Class lists</a><h1>${esc(cls.name)}</h1><p class="muted" style="margin:4px 0 0">${students.length} ${w.learners}</p></div>
+    <div class="page-h"><div><a href="#/classes" style="font-size:14px">← Class lists</a><h1>${esc(cls.name)}</h1><p class="muted" style="margin:4px 0 0">${students.length} ${w.learners}${students.some((s) => s.user_id) ? ` · ${students.filter((s) => s.user_id).length} registered` : ""}</p></div>
       <div class="row"><button class="btn" id="rename" type="button">Rename</button><button class="btn ghost danger" id="delClass" type="button">Delete class</button></div></div>
+    ${cls.join_code ? `<section class="panel" style="grid-template-columns:auto minmax(0,1fr);align-items:center">
+      <button class="code-pill" id="code" type="button" style="font-size:26px;padding:12px 16px" title="Copy code">${esc(cls.join_code)}</button>
+      <div><b>Class code</b><p class="muted" style="margin:2px 0 0;font-size:14px">${w.Learners} register on the home page (${esc(new URL("../", location.href).href)}) and enter this code to join. They're added to the list below, and tests you set for this class show up on their dashboard.</p></div></section>` : ""}
     <div class="bench">
       <section class="panel"><h2 style="font-size:20px">Add ${w.learners}</h2>
         <p class="muted" style="margin:0;font-size:14px">Paste one per line: admission / matric number and full name. You can copy two columns straight from Excel or Google Sheets.</p>
@@ -66,10 +71,11 @@ export async function classView(id) {
       </section>
       <section class="panel"><h2 style="font-size:20px">On the list</h2>
         ${students.length ? `<div class="scroll-x"><table class="data"><thead><tr><th>Number</th><th>Name</th><th></th></tr></thead><tbody>
-          ${students.map((s) => `<tr data-sid="${s.id}"><td class="num">${esc(s.student_no)}</td><td>${esc(s.full_name)}</td><td><button class="btn sm ghost danger" data-del type="button">Remove</button></td></tr>`).join("")}</tbody></table></div>`
+          ${students.map((s) => `<tr data-sid="${s.id}"><td class="num">${esc(s.student_no)}</td><td>${esc(s.full_name)}${s.user_id ? ` <span class="chip live" title="Has a student account">REGISTERED</span>` : ""}</td><td><button class="btn sm ghost danger" data-del type="button">Remove</button></td></tr>`).join("")}</tbody></table></div>`
           : `<div class="empty">Nobody yet. Paste your list on the left.</div>`}
       </section>
     </div>`;
+  $("#code", v)?.addEventListener("click", () => navigator.clipboard?.writeText(cls.join_code).then(() => toast("Class code copied"), () => {}));
   const preview = () => { const r = parseRoster($("#paste", v).value); $("#pv", v).textContent = r.length ? `${r.length} ${w.learners} found` : ""; return r; };
   $("#paste", v).oninput = preview;
   $("#csv", v).onchange = async (e) => { const f = e.target.files[0]; if (f) { $("#paste", v).value = await f.text(); preview(); } };

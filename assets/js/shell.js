@@ -20,9 +20,9 @@ export function words(kind = ctx.kind) {
 
 export function frame(active, inner) {
   const app = $("#app");
-  const tabs = [["quizzes", "Quizzes"], ["classes", "Class lists"], ["sessions", "Results"], ...(ctx.reviewer ? [["reviews", "Reviews"]] : []), ["school", "School"]];
+  const tabs = [["home", "Home"], ["quizzes", "Quizzes"], ["classes", "Class lists"], ["sessions", "Results"], ...(ctx.reviewer ? [["reviews", "Reviews"]] : []), ["school", "School"]];
   app.innerHTML = `<header class="topbar">
-      <a class="brand" href="#/quizzes">${LOGO} Afterclass</a>
+      <a class="brand" href="#/home">${LOGO} Afterclass</a>
       <nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<a href="#/${k}" class="${active === k ? "on" : ""}" ${active === k ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav>
       <div class="row"><span class="muted acct">${esc(ctx.head?.school?.name || "")}${ctx.head?.school ? " · " : ""}${esc(ctx.user.email)}</span><button class="btn sm" id="signOut" type="button">Sign out</button></div>
     </header><main id="view" style="display:grid;gap:20px">${inner}</main>`;

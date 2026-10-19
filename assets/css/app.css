@@ -414,3 +414,63 @@ body.stage .qa-item { border-color: var(--stage-line); background: var(--stage-3
 html.lite body { font-family: "Segoe UI", system-ui, sans-serif; }
 .qa-panel .qa-item { flex-wrap: wrap; }
 .qa-panel .qa-item > .row { flex-basis: 100%; justify-content: flex-end; }
+
+/* ---------- home page + student dashboard ---------- */
+body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in srgb, var(--accent) 14%, transparent), transparent), var(--bg); }
+.home-wrap { max-width: 1120px; margin: 0 auto; padding: 18px 20px 40px; display: grid; gap: 28px; }
+.home-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hero { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 32px; align-items: center; padding: 3vh 0 1vh; }
+.hero-copy { display: grid; gap: 16px; }
+.hero h1 { font-size: clamp(36px, 6vw, 64px); font-weight: 800; letter-spacing: -.01em; }
+.lead { font-size: 19px; color: var(--muted); margin: 0; max-width: 34em; }
+.hero-side { display: grid; gap: 10px; }
+.pin-card { background: var(--stage); color: var(--stage-ink); border-radius: 18px; padding: 22px; display: grid; gap: 10px; box-shadow: 0 18px 40px rgba(17, 23, 51, .25); }
+.pin-card .label { color: var(--stage-muted); }
+.pin-row { display: flex; gap: 8px; min-width: 0; }
+.pin-row input { flex: 1; min-width: 0; }
+.pin-row input { font: 800 26px/1 var(--f-mono) !important; letter-spacing: .1em; text-align: center; padding: 14px !important; border-radius: 12px !important; border: 0 !important; background: #fff !important; color: #111 !important; }
+.pin-row .btn { padding: 0 22px; font-size: 17px; background: var(--hi); border-color: var(--hi); color: var(--hi-ink); }
+.pin-card .status { color: #FF8E86; min-height: 0; margin: 0; }
+.panel .pin-card { box-shadow: none; }
+.roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+.role-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: grid; gap: 12px; align-content: start; transition: transform .15s, box-shadow .15s; }
+.role-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(23, 32, 59, .1); }
+.role-card h2 { font-size: 26px; }
+.role-card ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--muted); }
+.role-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font: 800 16px/1 var(--f-mono); background: var(--b); color: #fff; }
+.role-ic.t { background: var(--d); }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 16px; }
+.steps > div { display: grid; gap: 6px; padding: 4px 2px; }
+.steps b { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--accent); color: var(--accent); display: grid; place-items: center; font: 800 14px/1 var(--f-mono); }
+.steps h3 { font-size: 19px; }
+.steps p { margin: 0; }
+.home-foot { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); padding-top: 16px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--sunk); padding: 4px; border-radius: 999px; }
+.seg button { border: 0; background: none; border-radius: 999px; padding: 8px; font-weight: 700; cursor: pointer; color: var(--muted); }
+.seg button[aria-checked=true] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.who-chip { font-weight: 700; background: var(--sunk); border-radius: 999px; padding: 6px 12px; font-size: 14px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: 20px; align-items: start; }
+.dash-main, .dash-side { display: grid; gap: 20px; min-width: 0; }
+.h2 { font-size: 21px; }
+.todo { list-style: none; margin: 0; padding: 0; display: grid; }
+.todo li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.todo li:last-child { border-bottom: 0; }
+.todo li > div { min-width: 0; overflow-wrap: anywhere; }
+.score-pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-weight: 800; }
+.score-pill.hi { background: var(--good-bg); color: var(--good); }
+.score-pill.mid { background: var(--warn-bg); color: var(--warn); }
+.score-pill.lo { background: var(--bad-bg); color: var(--bad); }
+@media (max-width: 860px) { .hero, .dash { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .home-wrap { padding: 14px 16px 32px; } .pin-row input { font-size: 20px !important; } .who-chip { max-width: 140px; } }
+
+/* ---------- teacher home ---------- */
+.stat.link { text-decoration: none; color: inherit; transition: border-color .15s, transform .15s; }
+.stat.link:hover { border-color: var(--accent); transform: translateY(-1px); }
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; }
+.quick a { display: grid; gap: 4px; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); text-decoration: none; color: var(--ink); transition: border-color .15s, transform .15s; }
+.quick a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.quick a b { font: 800 18px/1.2 var(--f-display); }
+.quick a span { font-size: 13px; color: var(--muted); }
+.quick a.go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.quick a.go span { color: inherit; opacity: .85; }
+.code-pill { font: 800 15px/1 var(--f-mono); letter-spacing: .12em; background: var(--hi); color: var(--hi-ink); border-radius: 8px; padding: 6px 10px; border: 0; cursor: pointer; }

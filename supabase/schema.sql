@@ -88,6 +88,23 @@ create table if not exists public.students (
 );
 create unique index if not exists students_no_idx on public.students (class_id, lower(student_no));
 
+-- Accounts: teachers and (optionally) students register on the home page.
+-- Teachers who signed up before this existed have no row and count as teachers.
+create table if not exists public.profiles (
+  user_id    uuid primary key default auth.uid() references auth.users(id) on delete cascade,
+  role       text not null default 'teacher' check (role in ('teacher', 'student')),
+  full_name  text not null default '' check (length(full_name) <= 80),
+  student_no text not null default '' check (length(student_no) <= 40),
+  created_at timestamptz not null default now()
+);
+-- Students join a class with its code; their roster row is linked to their account.
+alter table public.classes add column if not exists join_code text;
+update public.classes set join_code = upper(substr(md5(random()::text || id::text), 1, 6)) where join_code is null;
+alter table public.classes alter column join_code set default upper(substr(md5(random()::text), 1, 6));
+create unique index if not exists classes_join_code_idx on public.classes (join_code);
+alter table public.students add column if not exists user_id uuid references auth.users(id) on delete set null;
+create unique index if not exists students_user_idx on public.students (class_id, user_id) where user_id is not null;
+
 -- A "session" is one run of a quiz: a live game or a self-paced assignment.
 -- Questions are copied in, so editing the quiz later never changes it.
 create table if not exists public.sessions (
@@ -133,6 +150,8 @@ alter table public.players add column if not exists student_id uuid references p
 alter table public.players add column if not exists email text;
 alter table public.players add column if not exists started_at timestamptz;
 alter table public.players add column if not exists flags jsonb not null default '{}'::jsonb;
+alter table public.players add column if not exists user_id uuid references auth.users(id) on delete set null;
+create index if not exists players_user_idx on public.players (user_id) where user_id is not null;
 create unique index if not exists players_nick_idx on public.players (session_id, lower(nickname));
 create unique index if not exists players_student_idx on public.players (session_id, student_id) where student_id is not null;
 
@@ -223,6 +242,10 @@ alter table public.answers            enable row level security;
 alter table public.audience_questions enable row level security;
 alter table public.audience_votes     enable row level security;
 alter table public.join_attempts      enable row level security;
+alter table public.profiles           enable row level security;
+
+drop policy if exists "own profile" on public.profiles;
+create policy "own profile" on public.profiles for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 drop policy if exists "members read school" on public.schools;
 create policy "members read school" on public.schools for select using (id = public.my_school());
@@ -654,6 +677,7 @@ declare
   s sessions; p players; st students;
   nick text := left(regexp_replace(trim(coalesce(p_nickname, '')), '\s+', ' ', 'g'), 24);
   em text := lower(trim(coalesce(p_email, '')));
+  uid uuid := auth.uid();
 begin
   if public._too_many_attempts() then raise exception 'Too many tries. Wait a few minutes and try again.'; end if;
   select * into s from sessions
@@ -674,20 +698,25 @@ begin
 
   -- Class list: identify by admission / matric number and a name on the list.
   if s.class_id is not null then
-    if length(trim(coalesce(p_student_no, ''))) = 0 then raise exception 'STUDENT_NO_REQUIRED'; end if;
-    select * into st from students where class_id = s.class_id
-       and lower(regexp_replace(student_no, '\s', '', 'g')) = lower(regexp_replace(p_student_no, '\s', '', 'g'));
-    if not found then
-      insert into join_attempts (ip) values (public._client_ip());
-      raise exception 'That number is not on the class list for this test. Check it, or ask your teacher.';
-    end if;
-    if not exists (select 1 from regexp_split_to_table(lower(st.full_name), '[^a-z]+') w
-                    where length(w) >= 2 and w = any (regexp_split_to_array(lower(nick), '[^a-z]+'))) then
-      insert into join_attempts (ip) values (public._client_ip());
-      raise exception 'The name does not match the class list. Type your surname or first name as your teacher has it.';
+    -- A signed-in student who joined this class with its code needs no number or name.
+    if uid is not null then select * into st from students where class_id = s.class_id and user_id = uid; end if;
+    if st.id is null then
+      if length(trim(coalesce(p_student_no, ''))) = 0 then raise exception 'STUDENT_NO_REQUIRED'; end if;
+      select * into st from students where class_id = s.class_id
+         and lower(regexp_replace(student_no, '\s', '', 'g')) = lower(regexp_replace(p_student_no, '\s', '', 'g'));
+      if not found then
+        insert into join_attempts (ip) values (public._client_ip());
+        raise exception 'That number is not on the class list for this test. Check it, or ask your teacher.';
+      end if;
+      if not exists (select 1 from regexp_split_to_table(lower(st.full_name), '[^a-z]+') w
+                      where length(w) >= 2 and w = any (regexp_split_to_array(lower(nick), '[^a-z]+'))) then
+        insert into join_attempts (ip) values (public._client_ip());
+        raise exception 'The name does not match the class list. Type your surname or first name as your teacher has it.';
+      end if;
     end if;
     select * into p from players where session_id = s.id and student_id = st.id;
     if found then
+      if uid is not null and p.user_id is null then update players set user_id = uid where id = p.id; end if;
       -- Same student again (new phone, or coming back for corrections): reopen the same
       -- attempt. A finished attempt can only be viewed; submit_assignment refuses a second one.
       return json_build_object('player_id', p.id, 'token', p.token, 'session_id', s.id, 'kind', s.kind,
@@ -697,7 +726,7 @@ begin
       raise exception 'This assignment has closed.';
     end if;
     if s.locked then raise exception 'This game is locked. Ask your teacher to unlock it.'; end if;
-    insert into players (session_id, nickname, student_id) values (s.id, left(st.full_name, 40), st.id) returning * into p;
+    insert into players (session_id, nickname, student_id, user_id) values (s.id, left(st.full_name, 40), st.id, uid) returning * into p;
   else
     if s.locked then raise exception 'This game is locked. Ask your teacher to unlock it.'; end if;
     if length(nick) < 2 then raise exception 'Enter a name with at least 2 letters.'; end if;
@@ -709,7 +738,7 @@ begin
       raise exception 'That name is taken. Add your surname initial, e.g. "Ada O."';
     end if;
     if (select count(*) from players where session_id = s.id) >= 5000 then raise exception 'This session is full.'; end if;
-    insert into players (session_id, nickname, email) values (s.id, nick, nullif(em, '')) returning * into p;
+    insert into players (session_id, nickname, email, user_id) values (s.id, nick, nullif(em, ''), uid) returning * into p;
   end if;
   return json_build_object('player_id', p.id, 'token', p.token, 'session_id', s.id, 'kind', s.kind,
                            'title', s.title, 'nickname', p.nickname, 'resumed', false);
@@ -945,6 +974,94 @@ begin
 end $$;
 
 -- =====================================================================
+-- ACCOUNTS (teachers and students register on the home page)
+-- =====================================================================
+-- Copies the role and name chosen at sign-up into public.profiles.
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into profiles (user_id, role, full_name, student_no)
+  values (new.id,
+          case when new.raw_user_meta_data ->> 'role' = 'student' then 'student' else 'teacher' end,
+          left(trim(coalesce(new.raw_user_meta_data ->> 'full_name', '')), 80),
+          left(trim(coalesce(new.raw_user_meta_data ->> 'student_no', '')), 40))
+  on conflict (user_id) do nothing;
+  return new;
+end $$;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
+
+-- A student joins a teacher's class with the class code. If the teacher already
+-- put them on the list, the number links them to that row; otherwise they are added.
+create or replace function public.join_class(p_code text, p_student_no text default '')
+returns json language plpgsql security definer set search_path = public as $$
+declare c classes; pr profiles; st students; sno text := left(regexp_replace(coalesce(p_student_no, ''), '\s', '', 'g'), 40);
+begin
+  if auth.uid() is null then raise exception 'Sign in first.'; end if;
+  if public._too_many_attempts() then raise exception 'Too many tries. Wait a few minutes and try again.'; end if;
+  select * into pr from profiles where user_id = auth.uid();
+  if pr.role is distinct from 'student' then raise exception 'Only student accounts can join a class.'; end if;
+  select * into c from classes where join_code = upper(regexp_replace(coalesce(p_code, ''), '\s', '', 'g'));
+  if not found then
+    insert into join_attempts (ip) values (public._client_ip());
+    raise exception 'No class with that code. Check it with your teacher.';
+  end if;
+  if exists (select 1 from students where class_id = c.id and user_id = auth.uid()) then
+    return json_build_object('class_id', c.id, 'name', c.name, 'already', true);
+  end if;
+  if sno = '' then sno := regexp_replace(pr.student_no, '\s', '', 'g'); end if;
+  if sno = '' then sno := 'AC-' || upper(substr(replace(auth.uid()::text, '-', ''), 1, 8)); end if;
+  select * into st from students where class_id = c.id and lower(regexp_replace(student_no, '\s', '', 'g')) = lower(sno);
+  if found then
+    if st.user_id is not null then raise exception 'That number is already used by another account in this class. Ask your teacher.'; end if;
+    if not exists (select 1 from regexp_split_to_table(lower(st.full_name), '[^a-z]+') w
+                    where length(w) >= 2 and w = any (regexp_split_to_array(lower(pr.full_name), '[^a-z]+'))) then
+      insert into join_attempts (ip) values (public._client_ip());
+      raise exception 'That number is on the class list under a different name. Check it, or ask your teacher.';
+    end if;
+    update students set user_id = auth.uid() where id = st.id;
+    return json_build_object('class_id', c.id, 'name', c.name, 'already', false);
+  end if;
+  if length(pr.full_name) < 2 then raise exception 'Add your full name to your profile first.'; end if;
+  insert into students (class_id, student_no, full_name, user_id) values (c.id, sno, pr.full_name, auth.uid());
+  return json_build_object('class_id', c.id, 'name', c.name, 'already', false);
+end $$;
+
+create or replace function public.leave_class(p_class uuid) returns void
+language sql security definer set search_path = public as $$
+  update students set user_id = null where class_id = p_class and user_id = auth.uid() $$;
+
+-- Everything the student dashboard shows, in one call.
+create or replace function public.student_home() returns json
+language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'Sign in first.'; end if;
+  return json_build_object(
+    'classes', (select coalesce(json_agg(json_build_object('id', c.id, 'name', c.name, 'student_no', st.student_no,
+                  'teacher', coalesce(nullif(pf.full_name, ''), nullif(m.display_name, ''), 'Your teacher')) order by c.name), '[]'::json)
+                from students st join classes c on c.id = st.class_id
+                left join profiles pf on pf.user_id = c.owner_id
+                left join school_members m on m.user_id = c.owner_id
+               where st.user_id = me),
+    'todo', (select coalesce(json_agg(json_build_object('session_id', s.id, 'title', s.title, 'pin', s.pin, 'kind', s.kind,
+                  'class', c.name, 'closes_at', s.closes_at, 'timed', (s.settings ->> 'timeLimitMin') is not null,
+                  'questions', jsonb_array_length(s.questions)) order by s.closes_at nulls last, s.created_at desc), '[]'::json)
+               from sessions s join classes c on c.id = s.class_id
+               join students st on st.class_id = c.id and st.user_id = me
+              where s.status not in ('ended', 'closed') and s.settings -> 'teams' is null
+                and (s.kind = 'live' or s.closes_at is null or s.closes_at > now())
+                and not exists (select 1 from players p where p.session_id = s.id and p.student_id = st.id and p.finished_at is not null)),
+    'history', (select coalesce(json_agg(h order by h.at desc), '[]'::json) from (
+                  select s.title, s.kind, s.pin, s.class_id is not null as graded, p.score, p.correct,
+                         jsonb_array_length(s.questions) as questions, coalesce(p.finished_at, p.joined_at) as at,
+                         p.finished_at is not null as finished, coalesce((s.settings ->> 'hideScores')::boolean, false) as hide_scores
+                    from players p join sessions s on s.id = p.session_id
+                   where p.user_id = me or p.student_id in (select id from students where user_id = me)
+                   order by p.joined_at desc limit 60) h));
+end $$;
+
+-- =====================================================================
 -- PERMISSIONS
 -- =====================================================================
 do $$
@@ -965,12 +1082,13 @@ begin
     'public.set_answer_credit(bigint, numeric)', 'public.accept_marks(uuid, int)', 'public.purge_old_sessions(int)',
     'public.delete_my_data()', 'public.create_school(text, text, text)', 'public.join_school(text, text, text)',
     'public.set_member(uuid, text, text)', 'public.new_join_code()', 'public.leave_school()',
-    'public.submit_for_review(uuid)', 'public.review_quiz(uuid, text, text)'] loop
+    'public.submit_for_review(uuid)', 'public.review_quiz(uuid, text, text)',
+    'public.join_class(text, text)', 'public.leave_class(uuid)', 'public.student_home()'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
   -- internal helpers are not callable from the website
-  foreach f in array array['public._assignment_score(uuid)', 'public._too_many_attempts()',
+  foreach f in array array['public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()',
     'public._assignment_results(public.players, public.sessions)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;

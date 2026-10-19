@@ -1,11 +1,11 @@
 # Afterclass
 
-Turn lesson notes into quizzes, tests and printed exam papers. Run them as a **live game** (phones join with a PIN), **class teams** (no phones needed), a **self-paced assignment** or **timed online test**, or a **webinar poll / Q&A**. Works for primary schools, secondary schools, universities and training events. Teachers manage everything from a dashboard; students never need an account.
+Turn lesson notes into quizzes, tests and printed exam papers. Run them as a **live game** (phones join with a PIN), **class teams** (no phones needed), a **self-paced assignment** or **timed online test**, or a **webinar poll / Q&A**. Works for primary schools, secondary schools, universities and training events. Teachers manage everything from a dashboard. Students can register for their own dashboard (classes, tests to do, past results) or just join a game with its PIN, no account needed.
 
 ```
 Your domain (GitHub Pages)                    Supabase (free)
-├── /            students enter PIN  ───────► database: quizzes, games, players, answers
-├── /teacher/    teacher dashboard   ───────► teacher logins
+├── /            home: register, sign in, PIN, student dashboard ──► database: quizzes, games, players, answers
+├── /teacher/    teacher dashboard   ───────► teacher and student logins
 └── /teacher/host.html  projector    ───────► live updates (realtime)
                                                └── optional AI function ──► Anthropic API
 ```

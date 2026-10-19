@@ -7,6 +7,7 @@ import { loadHeader, schoolView } from "./school.js";
 import { examView } from "./exam.js";
 import { editorView } from "./editor.js";
 import { classesView, classView } from "./classes.js";
+import { overviewView } from "./overview.js";
 import { sessionsView, reportView, reviewsView, reviewView } from "./report.js";
 
 const app = $("#app");
@@ -27,7 +28,7 @@ if (!configured) {
     if (event === "PASSWORD_RECOVERY") { recovering = true; return renderNewPassword(); }
     if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
     const was = ctx.user?.id; ctx.user = session?.user ?? null;
-    if (booted && !recovering && ctx.user?.id !== was) { ctx.head = null; route(); }
+    if (booted && !recovering && ctx.user?.id !== was) { ctx.head = null; ctx.isStudent = undefined; route(); }
   });
   const { data } = await sb.auth.getSession();
   ctx.user = data.session?.user ?? null;
@@ -40,8 +41,9 @@ function renderAuth(mode = "in") {
   app.innerHTML = `<div class="auth panel">
     <a class="brand" href="../">${LOGO} Afterclass</a>
     <div><h1 style="font-size:28px">${mode === "up" ? "Create your account" : mode === "reset" ? "Reset your password" : "Teacher sign in"}</h1>
-    <p class="muted" style="margin:6px 0 0">${mode === "reset" ? "We'll email you a link to choose a new password." : "For teachers, lecturers and presenters. Students and participants don't need an account; they join with a PIN."}</p></div>
+    <p class="muted" style="margin:6px 0 0">${mode === "reset" ? "We'll email you a link to choose a new password." : `For teachers, lecturers and presenters. Students register on the <a href="../">home page</a>, or just join a game with its PIN.`}</p></div>
     <form id="authForm" style="display:grid;gap:12px">
+      ${mode === "up" ? `<div class="field"><label class="label" for="fullName">Full name</label><input id="fullName" type="text" maxlength="80" autocomplete="name" required placeholder="e.g. Mrs. Bello"></div>` : ""}
       <div class="field"><label class="label" for="email">Email</label><input id="email" type="email" autocomplete="email" required></div>
       ${mode === "reset" ? "" : `<div class="field"><label class="label" for="pw">Password</label><input id="pw" type="password" minlength="8" autocomplete="${mode === "up" ? "new-password" : "current-password"}" required></div>`}
       <button class="btn primary big" type="submit">${mode === "up" ? "Create account" : mode === "reset" ? "Send reset link" : "Sign in"}</button>
@@ -58,7 +60,7 @@ function renderAuth(mode = "in") {
     try {
       if (mode === "in") { const { error } = await sb.auth.signInWithPassword({ email, password: pw }); if (error) throw error; }
       else if (mode === "up") {
-        const { data, error } = await sb.auth.signUp({ email, password: pw, options: { emailRedirectTo: location.href.split("#")[0] } });
+        const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { role: "teacher", full_name: $("#fullName").value.trim() }, emailRedirectTo: location.href.split("#")[0] } });
         if (error) throw error;
         if (!data.session) { st.textContent = "Check your email and click the confirmation link, then sign in."; return; }
       } else {
@@ -90,7 +92,8 @@ async function route() {
   ctx.leaveGuard = null; window.onbeforeunload = null;
   currentHash = location.hash;
   if (!ctx.head) { ctx.head = await loadHeader().catch(() => ({ profile: { kind: "secondary" } })); autoPurge(); }
-  const [, pageRaw = "", id] = (location.hash || "#/quizzes").split("/");
+  if (await isStudent()) return renderStudentAccount();
+  const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");
   try {
     if (page === "new") return await editorView(null, { importNow: query === "import" });
@@ -103,10 +106,28 @@ async function route() {
     if (page === "reviews") return await reviewsView();
     if (page === "review") return await reviewView(id);
     if (page === "school") { await schoolView(frame); ctx.head = await loadHeader(); return; }
-    return await quizzesView();
+    if (page === "quizzes") return await quizzesView();
+    return await overviewView();
   } catch (e) { frame("", `<div class="notice">${esc(e.message)}</div>`); }
 }
 export const refreshHead = async () => { ctx.head = await loadHeader(); };
+
+// Student accounts use the home page, not the teacher dashboard.
+async function isStudent() {
+  if (ctx.role !== null) return false;   // in a school as a teacher
+  if (ctx.isStudent === undefined) {
+    const { data } = await sb.from("profiles").select("role").eq("user_id", ctx.user.id).maybeSingle();
+    ctx.isStudent = (data?.role ?? ctx.user.user_metadata?.role) === "student";
+  }
+  return ctx.isStudent;
+}
+function renderStudentAccount() {
+  app.innerHTML = `<div class="auth panel"><a class="brand" href="../">${LOGO} Afterclass</a>
+    <h1 style="font-size:26px">This is a student account</h1>
+    <p class="muted" style="margin:0">You're signed in as ${esc(ctx.user.email)}, which is registered as a student. Your dashboard is on the home page.</p>
+    <div class="row"><a class="btn primary" href="../">Go to my dashboard</a><button class="btn" id="so" type="button">Sign out</button></div></div>`;
+  $("#so").onclick = async () => { await sb.auth.signOut(); };
+}
 
 // Data protection: quietly delete results older than the chosen retention period, once a day.
 async function autoPurge() {
