@@ -24,8 +24,11 @@ const schema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "question", "options", "correct_option", "model_answer", "key_points", "explanation", "source"],
+        required: ["concept", "skill", "type", "question", "options", "correct_option", "model_answer", "key_points", "explanation", "source"],
         properties: {
+          // The one idea this question tests; used to drop repeats.
+          concept: { type: "string" },
+          skill: { type: "string", enum: ["recall", "understand", "apply", "analyse"] },
           type: { type: "string", enum: ["mcq", "tf", "short"] },
           question: { type: "string" },
           options: { type: "array", items: { type: "string" } },
@@ -41,14 +44,14 @@ const schema = {
 };
 
 const TYPE_TEXT: Record<string, string> = {
-  mcq: '"mcq": exactly 4 options, one correct, plausible distractors taken from the material, never "all/none of the above"; correct_option is the 0-based index',
-  tf: '"tf": a clear statement; options ["True","False"]; correct_option 0 for true, 1 for false',
-  short: '"short": an open theory question; use (a), (b) on new lines for sub-parts when useful; model_answer holds the ideal answer and key_points 2-5 short marking points; options empty, correct_option -1',
+  mcq: '"mcq": exactly 4 options, one correct; correct_option is the 0-based index. Wrong options are real terms or statements from the same topic in the material (e.g. other organelles, other arms of government), the same kind of thing as the answer and of similar length and grammar, so none can be ruled out by its form. Never "all/none of the above"; avoid negative stems, and write NOT in capitals when one is needed',
+  tf: '"tf": one clear, checkable statement; a false one should be a believable mistake (a swapped term, wrong figure or wrong cause), not nonsense; options ["True","False"]; correct_option 0 for true, 1 for false',
+  short: '"short": a theory question that opens with an exam command word suited to its skill (Define, State, List, Outline, Describe, Explain, Distinguish between, Compare, Give reasons why, Calculate), with (a), (b) sub-parts on new lines when useful; model_answer holds the ideal answer and key_points 2-5 short marking points (the words a marker looks for); options empty, correct_option -1',
 };
 const DIFFICULTY: Record<string, string> = {
-  easy: "mostly direct recall of definitions and facts",
-  mixed: "a mix of recall, understanding and application",
-  hard: "mostly understanding, application and comparison rather than recall",
+  easy: "mostly recall (about 60%) with some understanding (40%)",
+  mixed: "about 30% recall, 40% understanding, 30% application or analysis",
+  hard: "about 10% recall, 40% understanding, 50% application or analysis (worked problems, unfamiliar examples, cause and effect, comparison)",
 };
 const LEVEL: Record<string, string> = {
   p13: "pupils aged 6-8 (Primary 1-3): very short sentences, everyday words, one idea per question, friendly tone",
@@ -96,8 +99,17 @@ ${types.map((t) => "- " + TYPE_TEXT[t]).join("\n")}
 
 Audience: ${level}. Difficulty: ${difficulty}.
 Language: write every question, option, answer and explanation in ${language}${language === "English" ? " (British spelling, as used in Nigerian schools)" : ""}.
-Cover all of the material, not just the beginning. Vary the position of the correct option. Do not repeat a question.
-Keep wording clear enough to read on a projector and a phone. Each explanation is one sentence that points back to the material.
+
+Write the questions the way an experienced subject teacher sets a school or WAEC/NECO-style paper:
+- First list the key concepts in the material (definitions, processes, causes and effects, classifications, functions, dates and figures, comparisons), then write each question on a different concept. "concept" names it in a few words; no two questions share a concept, and never ask the same fact twice in different words.
+- Spread the questions across the whole material in proportion to its sections, not just the beginning, and keep them in the order the material teaches them.
+- "skill" says what the question tests: recall (state a fact), understand (explain or describe in other words), apply (use the idea in a new example or calculation), analyse (compare, give reasons, predict).
+- Every question stands on its own: name the subject in full; never "it", "this process", "the above", "the passage", "the lesson", "according to the notes" or "as described in the text", and never refer to a figure the student cannot see.
+- Ask about the subject matter, never about the notes themselves, and never with empty templates such as "In your own words, explain the role of X" or "What do you understand by X as used in the lesson".
+- Vary how questions open; do not start more than two questions the same way.
+- Use precise subject vocabulary at the stated level. Each question has one clearly correct answer that the material supports.
+
+Vary the position of the correct option. Keep wording clear enough to read on a projector and a phone. Each explanation is one sentence that points back to the material.
 For maths, write LaTeX between single dollar signs, e.g. $x^2 + 3x$ or $\\frac{1}{2}$; for chemical formulas use $\\ce{H2SO4}$.
 "source" says where in the notes the answer is: the page number from the [Page N] markers (e.g. "p. 4"), or the file name shown in "=== name ===" lines plus page, or a short section name. Keep it under 30 characters.
 The title names the topic in a few words.`;
@@ -127,7 +139,17 @@ The title names the topic in a few words.`;
     const out = response.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text).join("");
-    return reply(JSON.parse(out));
+    // Safety net against repeats: keep the first question per concept and per wording.
+    const parsed = JSON.parse(out) as { title: string; questions: { concept?: string; question: string }[] };
+    const seen = new Set<string>();
+    const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    parsed.questions = parsed.questions.filter((q) => {
+      const keys = [key(q.question), q.concept ? "c:" + key(q.concept) : ""].filter(Boolean);
+      if (keys.some((k) => seen.has(k))) return false;
+      keys.forEach((k) => seen.add(k));
+      return true;
+    });
+    return reply(parsed);
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return reply({ error: "The AI is busy. Try again in a minute." }, 429);
     if (err instanceof Anthropic.AuthenticationError) return reply({ error: "The ANTHROPIC_API_KEY secret is missing or wrong." }, 500);

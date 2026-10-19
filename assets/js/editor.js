@@ -112,7 +112,7 @@ export async function editorView(id, opts = {}) {
         result = await aiGenerate({ text, pdfs: source.pdfs || [], count, types, level: $("#level", v).value, difficulty: $("#difficulty", v).value, language: $("#language", v).value });
       } else {
         if (text.split(/\s+/).length < 60) throw new Error("The built-in writer needs at least a couple of paragraphs of text.");
-        result = { title: "", questions: basicGenerate(text, count, types) };
+        result = { title: "", questions: basicGenerate(text, count, types, { difficulty: $("#difficulty", v).value, level: $("#level", v).value }) };
       }
       if (!result.questions.length) throw new Error("No questions could be made from this text. Try adding more notes.");
       const append = $("#append", v).checked && quiz.questions.length;
@@ -122,7 +122,9 @@ export async function editorView(id, opts = {}) {
       setStatus(engine === "basic"
         ? `Wrote ${result.questions.length} questions with the built-in writer. Read each one; fix or delete any that don't make sense, then Save.`
         : `Wrote ${result.questions.length} questions. Each shows the page it came from, so you can check it quickly. Then Save.`);
-      if (result.questions.length < count) setStatus($("#status", v).textContent + ` (Only ${result.questions.length} of ${count}: the notes are too short for more.)`);
+      if (result.questions.length < count) setStatus($("#status", v).textContent + (engine === "basic"
+        ? ` Only ${result.questions.length} of ${count}: the built-in writer only asks about definitions, lists, reasons and facts it can find clearly, rather than pad the quiz with weak questions. Add more notes, add your own questions, or use the AI writer.`
+        : ` (Only ${result.questions.length} of ${count}: the notes are too short for more.)`));
     } catch (e) { setStatus(e.message, true); }
     finally { $("#gen", v).disabled = false; }
   };
