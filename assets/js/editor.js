@@ -53,7 +53,7 @@ export async function editorView(id, opts = {}) {
           <label class="check"><input type="checkbox" id="tTf" checked> True / False</label>
           <label class="check"><input type="checkbox" id="tShort" checked> Written / theory</label>
         </div></div>
-        ${AI_ENABLED ? "" : `<p class="muted" style="margin:0;font-size:13px">The built-in writer makes simple fill-in-the-blank and definition questions in English. For exam-quality questions, other languages, reading levels and maths, turn on the AI writer (README step 7).</p>`}
+        ${AI_ENABLED ? "" : `<p class="muted" style="margin:0;font-size:13px">The built-in writer asks exam-style questions about what your notes state: definitions, lists, functions, stages, reasons and facts (direct and best-answer questions, NOT questions, matching, correct order, assertion–reason, and structured theory questions with marks). For questions that apply ideas to new situations, other languages and maths, turn on the AI writer (README step 7).</p>`}
         <label class="check" id="appendWrap" style="justify-self:start" hidden><input type="checkbox" id="append"> Add to the current questions instead of replacing them</label>
         <div class="row"><button class="btn primary big" id="gen" type="button">Generate questions</button></div>
         <div class="status" id="status" role="status" aria-live="polite"></div>

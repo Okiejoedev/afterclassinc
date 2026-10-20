@@ -62,7 +62,7 @@ function isHeading(line, prevEndsSentence) {
 function parse(text) {
   const segs = [];
   let seg = { heading: "", sentences: [], lists: [] }; segs.push(seg);
-  let file = "", page = "", para = [], bullets = [], intro = "", prevEnds = true;
+  let file = "", page = "", para = [], bullets = [], numbered = 0, intro = "", prevEnds = true;
   const src = () => [file, page && "p. " + page].filter(Boolean).join(", ");
   const flushPara = () => {
     if (!para.length) return;
@@ -77,11 +77,11 @@ function parse(text) {
       const items = bullets.filter((b) => !isAsk(b)).map(splitItem).filter(Boolean);
       // Long bullets are really sentences.
       const listy = items.filter((x) => wc(x.name) <= 10);
-      if (listy.length >= 2) seg.lists.push({ intro, heading: seg.heading, items: listy, src: src() });
+      if (listy.length >= 2) seg.lists.push({ intro, heading: seg.heading, items: listy, src: src(), numbered: numbered === bullets.length });
       for (const b of bullets) if (wc(b) > 12 && !/[–—:]/.test(b)) para.push(/[.!?]$/.test(b) ? b : b + ".");
       flushPara();
     } else if (bullets.length === 1) { para.push(bullets[0]); }
-    bullets = []; intro = "";
+    bullets = []; numbered = 0; intro = "";
   };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\s+/g, " ").trim();
@@ -96,6 +96,7 @@ function parse(text) {
         flushPara();
       }
       bullets.push(line.replace(BULLET, "").trim());
+      if (/^\s*\(?\d{1,2}[.)]/.test(line)) numbered++;
       prevEnds = true; continue;
     }
     if (bullets.length) flushBullets();
@@ -158,7 +159,9 @@ function extract(segs) {
     for (const L of g.lists) {
       const hdr = parseListHead(L.intro) || parseListHead(L.heading) || parseListHead(L.intro + " " + L.heading);
       const items = L.items.map((x) => x.name);
-      if (hdr) add({ kind: "list", rel: hdr.rel, conn: hdr.conn, topic: hdr.topic, items, seg: gi, src: L.src, text: `${hdr.rel} of ${hdr.topic}: ${items.join(", ")}` });
+      // Numbered stages / steps of a process can be asked about in order.
+      const ordered = L.numbered && (/^(?:stages|steps|phases)$/.test(hdr?.rel || "") || /\b(stages?|steps?|phases?|process|procedure|sequence|order|how to)\b/i.test(`${L.intro} ${L.heading}`));
+      if (hdr) add({ kind: "list", rel: hdr.rel, conn: hdr.conn, topic: hdr.topic, items, ordered, seg: gi, src: L.src, text: `${hdr.rel} of ${hdr.topic}: ${items.join(", ")}` });
       else add({ kind: "group", items, seg: gi, src: L.src, text: items.join(", ") });   // distractor pool only
       // "Nucleus – controls the activities of the cell": a fact about each item.
       for (const it of L.items) if (it.detail && wc(it.detail) >= 2) {
@@ -172,7 +175,7 @@ function extract(segs) {
       const plain = s.replace(/\.$/, "");
       // Lists inside a sentence ("The features of federalism are…"). A list is not also a definition.
       const L = sentenceList(plain);
-      if (L) add({ ...base, kind: "list", ...L, text: s });
+      if (L) add({ ...base, kind: "list", ...L, ordered: /^(?:stages|steps|phases)$/.test(L.rel), text: s });
       // Definitions.
       if (L) { /* already used as a list */ }
       else if ((m = plain.match(/^(.{8,160}?)\s+(?:is|are)\s+(?:called|known as|termed|referred to as)\s+(?:an?\s+|the\s+)?(.{2,50})$/i)) && cleanTerm(m[2]) && cleanDef(m[1]) && !DANGLING.test(m[1]))
@@ -250,6 +253,8 @@ function whyQuestion(s) {
   const m = s.match(/^(.{4,140}?)\s*,?\s+because\s+(.{5,})$/i);
   if (!m) return null;
   const clause = m[1], reason = trimEnd(m[2]);
+  // "Food that is not chewed properly is difficult…" can't be turned around safely: ask "Explain why…".
+  if (/\b(?:that|which|who|whose|when|if|whereas)\b/i.test(clause)) return DANGLING.test(clause) ? null : { q: `Explain why ${lc(clause)}.`, clause, reason };
   let k = clause.match(/^((?:the\s+|an?\s+)?[A-Za-z][\w-]*(?:\s[a-z][\w-]*){0,3}?)\s+(is|are|was|were|can|could|will|would|should|must|has|have|had|do|does|did)\s+(not\s+)?(.+)$/i);
   if (k && !DANGLING.test(k[1])) return { q: `Why ${k[2].toLowerCase()} ${lc(k[1])} ${k[3] || ""}${k[4]}?`.replace(/\s+/g, " "), clause, reason };
   k = clause.match(/^((?:the\s+|an?\s+)?[A-Za-z][\w-]*(?:\s[a-z][\w-]*){0,2}?)\s+([a-z]+)\s+(.+)$/);
@@ -261,6 +266,8 @@ function whyQuestion(s) {
   return null;
 }
 const lc = (s) => lcfirstIfCommon(s);
+// Every word, for topics taken from Title Case headings ("Stages of Nutrition in Man").
+const lcAll = (s) => String(s).split(" ").map((w) => (isProper(w.replace(/[^A-Za-z]/g, "")) ? w : w.toLowerCase())).join(" ");
 const base = (v) => /(ss|sh|ch|x|z)es$/.test(v) ? v.slice(0, -2) : /ies$/.test(v) ? v.slice(0, -3) + "y" : v.slice(0, -1);
 // "release energy" -> "releases energy" after "Which part … ?" (one thing is asked for).
 function thirdPerson(phrase) {
@@ -326,6 +333,7 @@ function candidates(facts, opts) {
   const sameSeg = (f, p) => segOf.get(String(p).toLowerCase()) === f.seg;
   const defTerms = new Set(defs.map((f) => f.term.toLowerCase()));   // other concepts make better wrong answers than examples
   const young = opts.level === "p13" || opts.level === "p46";
+  const senior = ["sss", "uni", "adult"].includes(opts.level) || (opts.level === "jss" && opts.difficulty === "hard");
   const out = [];
   // An option that appears in the question gives the game away (or makes no sense): drop the question.
   const inStem = (o, stem) => new RegExp("\\b" + esc(String(o).toLowerCase()) + "\\b").test(stem.toLowerCase());
@@ -345,34 +353,44 @@ function candidates(facts, opts) {
       // A false statement is only worth asking if it is plausible: swap in a related definition.
       const near = defs.filter((d) => d !== f && related(f, d));
       if (near.length) { const d = pick(near); push(f, { key: T, form: "tf", type: "tf", question: `${ucfirst(tlc)} ${be} ${d.def}.`, options: ["True", "False"], answer: 1, explanation: `That describes ${named(d)}. ${ucfirst(tlc)} ${be} ${D}.`, score: 5 }); }
-      push(f, { key: T, form: "define", type: "short", question: young ? `What ${be} ${tlc}?` : pick([`Define ${tlc}.`, `What is meant by ${tlc}?`, `Explain the term "${lc(T)}".`, `Give the meaning of ${tlc}.`]), answer: `${ucfirst(tlc)} ${be} ${D}.`, keyPoints: keyPoints(D), score: 5 });
+      push(f, { key: T, form: "define", type: "short", marks: 2, question: young ? `What ${be} ${tlc}?` : pick([`Define ${tlc}.`, `What is meant by ${tlc}?`, `Explain the term "${lc(T)}".`, `Give the meaning of ${tlc}.`]), answer: `${ucfirst(tlc)} ${be} ${D}.`, keyPoints: keyPoints(D), score: 5 });
       // Two closely related definitions (diffusion / osmosis, compiler / interpreter): compare them.
       const pair = defs.find((d) => d.id > f.id && related(f, d));
-      if (pair && !young) push(f, { key: T + "|" + pair.term, keys: [T, pair.term], form: "distinguish", type: "short", question: `Distinguish between ${lc(T)} and ${lc(pair.term)}.`, answer: `${ucfirst(tlc)} ${be} ${D}. ${ucfirst(named(pair))} ${isAre(pair.term)} ${pair.def}.`, keyPoints: [`${lc(T)}: ${D}`, `${lc(pair.term)}: ${pair.def}`], score: 7 + (opts.difficulty === "hard" ? 2 : 0) });
+      if (pair && !young) push(f, { key: T + "|" + pair.term, keys: [T, pair.term], form: "distinguish", type: "short", marks: 4, question: `Distinguish between ${lc(T)} and ${lc(pair.term)}.`, answer: `${ucfirst(tlc)} ${be} ${D}. ${ucfirst(named(pair))} ${isAre(pair.term)} ${pair.def}.`, keyPoints: [`${lc(T)}: ${D}`, `${lc(pair.term)}: ${pair.def}`], score: 7 + (opts.difficulty === "hard" ? 2 : 0) });
     }
-    if (f.kind === "meaning") push(f, { key: f.term, form: "define", type: "short", question: `What is meant by ${named(f)}?`, answer: `${ucfirst(named(f))} means that ${f.def}.`, keyPoints: keyPoints(f.def), score: 5 });
+    if (f.kind === "meaning") push(f, { key: f.term, form: "define", type: "short", marks: 2, question: `What is meant by ${named(f)}?`, answer: `${ucfirst(named(f))} means that ${f.def}.`, keyPoints: keyPoints(f.def), score: 5 });
     if (f.kind === "role") {
       const sib = f.siblings.filter((x) => x.toLowerCase() !== f.term.toLowerCase());
       // "controls the cell" / "make proteins" describe what it does; "the jelly-like substance…" what it is.
       const w0 = f.desc.split(" ")[0].toLowerCase();
       const verbish = /^[a-z]/.test(f.desc) && !/^(?:is|are|has|was|a|an|the|one|part|site|place|area|region|layer|organ|organelle|structure|store|source|centre|center|unit|small|large|thin|thick|long|short|main)$/.test(w0) && !/(tion|sion|ment|ness|ity|ance|ence|ure|ism|ous|al|ic|ive|ed)$/.test(w0);
       const o = options(f.term, sib.length >= 3 ? sib : sib.concat(terms));
-      const where = f.topic ? ` ${/^(?:parts|organs|components|structures|organelles|elements)$/.test(f.rel || "") ? "in" : "of"} ${lc(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase()))}` : "";
+      const where = f.topic ? ` ${/^(?:parts|organs|components|structures|organelles|elements)$/.test(f.rel || "") ? "in" : "of"} ${lcAll(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase()))}` : "";
       // Name the kind of thing when the notes say it: "Which organ of the digestive system absorbs water…?"
       const kind = f.rel && REL[f.rel] && !/^(?:function|role|use|feature|characteristic|property|advantage|disadvantage|reason|effect|cause|duty|objective|problem|quality|principle|factor)$/.test(REL[f.rel]) ? REL[f.rel] : "";
-      const topicL = f.topic ? lc(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase())) : "";
+      const topicL = f.topic ? lcAll(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase())) : "";
       const who = kind && topicL && sib.length >= 3 && (f.siblings.length >= 4 || Math.random() < 0.7) ? `Which ${kind} ${/^(?:an?|the)\s/.test(topicL) ? "of " + topicL : "of the " + topicL}` : "Which of the following";
       // "food is chewed and mixed with saliva" -> "In which organ … is food chewed and mixed with saliva?"
       const clause = f.desc.match(/^((?:the\s+)?[a-z]+(?:\s[a-z]+)?)\s+(is|are|was|were)\s+(.+)$/i);
       const stem = clause ? `In ${who.charAt(0).toLowerCase() + who.slice(1)} ${clause[2]} ${clause[1]} ${clause[3]}?`
         : verbish ? `${who} ${thirdPerson(f.desc)}?` : `${who} is ${f.desc.replace(/^(?:an?|the)\s+/i, (x) => x.toLowerCase())}?`;
       if (o) push(f, { key: f.term, form: "role", type: "mcq", question: stem, ...o, explanation: `${f.term}: ${f.desc}.`, score: 6 });
-      push(f, { key: f.term, form: "state-role", type: "short", question: young ? `What does the ${f.term.toLowerCase()} do?` : pick([`State the function of the ${f.term.toLowerCase()}${where}.`, `What is the role of the ${f.term.toLowerCase()}${where}?`]), answer: `${f.term}: ${f.desc}.`, keyPoints: keyPoints(f.desc), score: 5 });
+      // Matching: "Which of the following pairs is correctly matched?" (the other pairs swap descriptions).
+      const mates = roles.filter((r) => r !== f && r.siblings === f.siblings);
+      if (mates.length >= 3) {
+        const group = [f, ...shuffle(mates).slice(0, 3)];
+        // Rotate the descriptions so every wrong pair is wrong and no description is shown twice.
+        const mates3 = group.slice(1);
+        const wrong = mates3.map((r, i) => `${r.term} — ${mates3[(i + 1) % 3].desc}`);
+        const right = `${f.term} — ${f.desc}`, os = shuffle([right, ...wrong]);
+        push(f, { key: f.term, form: "match", type: "mcq", question: pick(["Which of the following pairs is correctly matched?", `Which of the following correctly matches ${kind ? "the " + kind : "each item"} to its ${/^(?:organ|part|organelle|component|structure)$/.test(kind) ? "function" : "description"}?`]), options: os, answer: os.indexOf(right), explanation: group.map((r) => `${r.term}: ${r.desc}`).join("; ") + ".", score: 6 });
+      }
+      push(f, { key: f.term, form: "state-role", type: "short", marks: 2, question: young ? `What does the ${f.term.toLowerCase()} do?` : pick([`State the function of the ${f.term.toLowerCase()}${where}.`, `What is the role of the ${f.term.toLowerCase()}${where}?`]), answer: `${f.term}: ${f.desc}.`, keyPoints: keyPoints(f.desc), score: 5 });
       const o2 = roles.filter((r) => r !== f && r.seg === f.seg);
       if (o2.length) { const r = pick(o2); push(f, { key: f.term, form: "tf", type: "tf", question: `The ${f.term.toLowerCase()} ${verbish ? r.desc : "is " + r.desc}.`, options: ["True", "False"], answer: 1, explanation: `That is the ${r.term.toLowerCase()}. The ${f.term.toLowerCase()} ${verbish ? f.desc : "is " + f.desc}.`, score: 4 }); }
     }
     if (f.kind === "list" && f.items.length >= 2) {
-      const C = f.conn || "of", R = f.rel, one = singular(R), topic = lc(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase())), Q = f.qual ? " " + f.qual : "";
+      const C = f.conn || "of", R = f.rel, one = singular(R), topic = lcAll(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase())), Q = f.qual ? " " + f.qual : "";
       // "a type of programming error", not "a type of programming errors"
       const topic1 = /^(types|kinds|forms|classes|categories)$/.test(R) ? topic.replace(/([^s])s$/, "$1") : topic;
       const k = Math.min(f.items.length, young ? 2 : 3), kw = NUMNAME[k] || String(k);
@@ -394,13 +412,47 @@ function candidates(facts, opts) {
         }
       }
       const verb = R === "examples" ? "Give" : R === "stages" || R === "steps" ? (young ? "Name" : "Outline") : pick(young ? ["Name", "List"] : ["State", "List", "Mention"]);
-      push(f, { key: topic, form: "state-list", type: "short", question: f.items.length > k ? `${verb} ${kw} ${R} ${C} ${topic}${Q}.` : `${verb} the ${R} ${C} ${topic}${Q}.`, answer: (f.items.length > k ? `Any ${kw} of: ` : "") + f.items.join("; ") + ".", keyPoints: f.items.slice(0, 8), score: 6 });
+      // Correct order of numbered stages / steps.
+      if (f.ordered && f.items.length >= 3) {
+        const seq = f.items.slice(0, 5), right = seq.join(" → "), wrongs = new Set();
+        for (let t = 0; t < 40 && wrongs.size < 3; t++) {
+          const s2 = seq.slice();
+          for (let sw = 0; sw < 1 + (t % 2); sw++) { const i = Math.floor(Math.random() * (s2.length - 1)); [s2[i], s2[i + 1]] = [s2[i + 1], s2[i]]; }
+          if (s2.join(" → ") !== right) wrongs.add(s2.join(" → "));
+        }
+        if (wrongs.size === 3) { const os = shuffle([right, ...wrongs]); push(f, { key: topic, form: "order", type: "mcq", question: `Which of the following shows the correct order of the ${R} ${C} ${topic}?`, options: os, answer: os.indexOf(right), explanation: `In order: ${seq.join(", ")}.`, score: 7 }); }
+        if (!young) push(f, { key: topic, form: "describe-order", type: "short", marks: seq.length, question: `Describe, in order, the ${R} ${C} ${topic}.`, answer: seq.map((x, i) => `${i + 1}. ${x}`).join("\n"), keyPoints: seq, score: 6 });
+      }
+      // WAEC-style "I, II, III, IV" item. Item-writing research prefers single-answer items,
+      // so this is kept to senior classes and used sparingly (see the cap in choose()).
+      if (one && senior && f.items.length >= 3 && others.length >= 2) {
+        const nTrue = Math.random() < 0.5 ? 2 : 3;
+        const stmts = shuffle([...shuffle(f.items).slice(0, nTrue).map((x) => [x, true]), ...shuffle(others.slice(0, 8)).slice(0, 4 - nTrue).map((x) => [x, false])]);
+        const RN = ["I", "II", "III", "IV"];
+        const label = (ix) => (ix.length === 4 ? "I, II, III and IV" : `${ix.slice(0, -1).map((i) => RN[i]).join(", ")} and ${RN[ix[ix.length - 1]]} only`);
+        const right = label(stmts.map((x, i) => (x[1] ? i : -1)).filter((i) => i >= 0));
+        const combos = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3], [0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3], [0, 1, 2, 3]].map(label).filter((x) => x !== right);
+        const os = shuffle([right, ...shuffle(combos).slice(0, 3)]);
+        push(f, { key: topic, form: "multi", type: "mcq", question: `Which of the following are ${R} ${C} ${topic}${Q}?\n${stmts.map((x, i) => `${RN[i]}. ${ucfirst(x[0])}`).join("\n")}`, options: os, answer: os.indexOf(right), explanation: `The ${R} ${C} ${topic}${Q} are: ${f.items.join(", ")}.`, score: opts.difficulty === "easy" ? 4 : 6.5 });
+      }
+      push(f, { key: topic, form: "state-list", type: "short", marks: k, question: f.items.length > k ? `${verb} ${kw} ${R} ${C} ${topic}${Q}.` : `${verb} the ${R} ${C} ${topic}${Q}.`, answer: (f.items.length > k ? `Any ${kw} of: ` : "") + f.items.join("; ") + ".", keyPoints: f.items.slice(0, 8), score: 6 });
     }
     if (f.kind === "why") {
       const reasons = facts.filter((x) => x.kind === "why" && x !== f).map((x) => x.reason);
       const o = reasons.length >= 3 ? options(f.reason, reasons) : null;
       if (o && Math.random() < 0.5) push(f, { key: f.q, form: "why-mcq", type: "mcq", question: f.q, ...o, explanation: f.sentence, score: 5 });
-      push(f, { key: f.q, form: "why", type: "short", question: young || Math.random() < 0.5 ? f.q : `Explain why ${lc(f.clause)}.`, answer: ucfirst(f.reason) + ".", keyPoints: keyPoints(f.reason, 3), score: 6 + (opts.difficulty === "hard" ? 1 : 0) });
+      // Assertion–reason: is each statement true, and does the reason explain the assertion?
+      if (!young) {
+        const others = facts.filter((x) => x.kind === "why" && x !== f);
+        const swap = others.length > 0 && Math.random() < 0.35;
+        const reason = swap ? pick(others).reason : f.reason;
+        push(f, { key: f.q, form: "assert", type: "mcq", question: `Assertion: ${ucfirst(f.clause)}.\nReason: ${ucfirst(reason)}.`, options: [
+          "Both are true, and the reason correctly explains the assertion",
+          "Both are true, but the reason does not explain the assertion",
+          "The assertion is true, but the reason is false",
+          "The assertion is false, but the reason is true"], answer: swap ? 1 : 0, explanation: `${ucfirst(f.clause)} because ${f.reason}.`, score: 6 + (opts.difficulty !== "easy" ? 1 : 0) });
+      }
+      push(f, { key: f.q, form: "why", type: "short", marks: 2, question: young || Math.random() < 0.5 ? f.q : `Explain why ${lc(f.clause)}.`, answer: ucfirst(f.reason) + ".", keyPoints: keyPoints(f.reason, 3), score: 6 + (opts.difficulty === "hard" ? 1 : 0) });
     }
     if (f.kind === "cause") {
       const causes = facts.filter((x) => x.kind === "cause" && x !== f).map((x) => x.cause).concat(terms);
@@ -434,6 +486,28 @@ function candidates(facts, opts) {
       }
     }
   }
+  // Structured theory question (WAEC/NECO style): one topic, parts that build up from
+  // recall to reasoning, with marks per part. Built from the topic's single questions.
+  if (!young && opts.difficulty !== "easy") {
+    const order = ["define", "state-list", "state-role", "describe-order", "why", "distinguish"];
+    const bySeg = new Map();
+    for (const c of out) if (c.type === "short" && order.includes(c.form)) bySeg.set(c.seg, [...(bySeg.get(c.seg) || []), c]);
+    for (const [seg, list] of bySeg) {
+      const parts = [], used = new Set(), keys = new Set();
+      for (const form of order) for (const c of shuffle(list)) {
+        if (parts.length >= 4 || c.form !== form || used.has(c.fact)) continue;
+        if ((c.keys || [c.key]).some((k) => keys.has(String(k).toLowerCase()))) continue;
+        if (parts.some((x) => x.form === form)) continue;      // one part of each kind, so the parts build up
+        parts.push(c); used.add(c.fact); (c.keys || [c.key]).forEach((k) => keys.add(String(k).toLowerCase()));
+      }
+      if (parts.length < 2) continue;
+      const mk = (x) => x.marks || 2, abc = "abcd";
+      out.push({ fact: parts[0].fact, facts: parts.map((x) => x.fact), keys: [...keys], seg, src: parts[0].src, form: "structured", type: "short",
+        question: parts.map((x, i) => `(${abc[i]}) ${x.question} [${mk(x)} mark${mk(x) > 1 ? "s" : ""}]`).join("\n"),
+        answer: parts.map((x, i) => `(${abc[i]}) ${x.answer}`).join("\n"), keyPoints: parts.flatMap((x) => x.keyPoints || []).slice(0, 10),
+        marks: parts.reduce((a, x) => a + mk(x), 0), score: 7 + parts.length + (opts.difficulty === "hard" ? 2 : 0) });
+    }
+  }
   return out;
 }
 // Two definitions are related when they open the same way ("the movement of…"),
@@ -465,15 +539,15 @@ function choose(cands, n, types, opts) {
   const formCap = Math.max(2, Math.ceil(n / 5));
   const diffBonus = { easy: { define: 2, describes: 1, gap: 1, "list-which": 1 }, mixed: {}, hard: { distinguish: 2, "list-not": 2, why: 2, name: 1, "why-mcq": 1 } }[opts.difficulty] || {};
   const rank = (c, strict) => {
-    if (usedFact.has(c.fact) && strict) return -1;
+    if ((c.facts || [c.fact]).some((x) => usedFact.has(x)) && strict) return -1;
     const keys = c.keys || [c.key];
     if (keys.some((k) => (usedKey.get(String(k).toLowerCase()) || 0) >= (strict ? 1 : 2))) return -1;
-    const cap = c.form === "tf" ? Infinity : c.form === "tf-copy" ? Math.max(1, Math.ceil(n / 10)) : c.form === "distinguish" ? Math.max(1, Math.ceil(n / 8)) : formCap;
+    const cap = c.form === "tf" ? Infinity : c.form === "tf-copy" ? Math.max(1, Math.ceil(n / 10)) : c.form === "distinguish" || c.form === "assert" ? Math.max(1, Math.ceil(n / 8)) : c.form === "multi" ? Math.max(1, Math.floor(n / 12)) : c.form === "structured" ? Math.max(1, Math.ceil(n / 6)) : formCap;
     if ((usedForm[c.form] || 0) >= (strict ? cap : cap * 2)) return -1;
     return c.score + (diffBonus[c.form] || 0) - (segCount[c.seg] || 0) * 1.5 - (usedForm[c.form] || 0) * 0.8 + Math.random() * 1.5;
   };
   const take = (c) => {
-    out.push(c); usedFact.add(c.fact);
+    out.push(c); (c.facts || [c.fact]).forEach((x) => usedFact.add(x));
     for (const k of c.keys || [c.key]) usedKey.set(String(k).toLowerCase(), (usedKey.get(String(k).toLowerCase()) || 0) + 1);
     usedForm[c.form] = (usedForm[c.form] || 0) + 1; segCount[c.seg] = (segCount[c.seg] || 0) + 1;
     want[c.type]--;
@@ -528,8 +602,10 @@ function stripPageFurniture(text) {
 export function writeQuestions(text, opts) {
   const o = { count: 10, types: ["mcq", "tf", "short"], difficulty: "mixed", level: "jss", ...opts };
   proper = new Set();
-  for (const m of String(text).matchAll(/(?<=[a-z0-9,;)][ \t]+)([A-Z][a-z]+)/g)) proper.add(m[1]);
-  for (const m of String(text).matchAll(/\b([A-Z][a-z]+)[ \t]+([A-Z][a-z]+)\b/g)) if (!/^(The|A|An|In|On|At|For|And|But|Of|It|This|These)$/.test(m[1])) { proper.add(m[1]); proper.add(m[2]); }
+  // Learn names from running sentences only: headings are written in Title Case.
+  const prose = String(text).split(/\r?\n/).filter((l) => wc(l) >= 8 || /[.!?]$/.test(l.trim())).join("\n");
+  for (const m of prose.matchAll(/(?<=[a-z0-9,;)][ \t]+)([A-Z][a-z]+)/g)) proper.add(m[1]);
+  for (const m of prose.matchAll(/\b([A-Z][a-z]+)[ \t]+([A-Z][a-z]+)\b/g)) if (!/^(The|A|An|In|On|At|For|And|But|Of|It|This|These)$/.test(m[1])) { proper.add(m[1]); proper.add(m[2]); }
   // A word the notes also write in lower case is not a name ("Federalism" heading, "federalism" in text).
   for (const w of String(text).match(/\b[a-z][a-z-]+\b/g) || []) proper.delete(ucfirst(w));
   const segs = parse(stripPageFurniture(String(text)));
@@ -539,8 +615,10 @@ export function writeQuestions(text, opts) {
   return chosen.map((c) => {
     const q = { id: uid(), type: c.type, question: tidy(c.question), explanation: c.explanation ? tidy(c.explanation) : "" };
     if (c.src) q.source = c.src;
+    if (c.marks) q.marks = c.marks;
     if (c.type === "short") return { ...q, answer: tidy(c.answer), keyPoints: c.keyPoints || [] };
     return { ...q, options: c.options.map((x) => tidy(x)), answer: c.answer };
   });
 }
-const tidy = (s) => String(s).replace(/\s+([,.;:?])/g, "$1").replace(/\s+/g, " ").replace(/\.\.+/g, ".").trim();
+// Keeps line breaks: structured parts (a), (b) and Assertion / Reason sit on their own lines.
+const tidy = (s) => String(s).split("\n").map((l) => l.replace(/[ \t]+([,.;:?])/g, "$1").replace(/[ \t]+/g, " ").replace(/\.\.+/g, ".").trim()).filter(Boolean).join("\n");

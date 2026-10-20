@@ -43,10 +43,20 @@ const schema = {
   },
 };
 
+// Question methods teachers and exam bodies (WAEC, NECO, JAMB) use, with item-writing
+// research rules (Haladyna, Downing & Rodriguez 2002) for writing them well.
 const TYPE_TEXT: Record<string, string> = {
-  mcq: '"mcq": exactly 4 options, one correct; correct_option is the 0-based index. Wrong options are real terms or statements from the same topic in the material (e.g. other organelles, other arms of government), the same kind of thing as the answer and of similar length and grammar, so none can be ruled out by its form. Never "all/none of the above"; avoid negative stems, and write NOT in capitals when one is needed',
+  mcq: `"mcq": exactly 4 options, one correct; correct_option is the 0-based index. Mix these objective methods:
+    - direct question ("Which organ of the digestive system absorbs water?") and incomplete statement ("Peristalsis is best defined as");
+    - best answer, application to a new example or short scenario ("A pupil's gums bleed and he eats no fruit. Which vitamin is lacking?");
+    - matching ("Which of the following pairs is correctly matched?" with term — function pairs);
+    - correct order of stages or steps ("A → B → C → D");
+    - assertion–reason (question text "Assertion: …" and "Reason: …" on separate lines; options exactly: "Both are true, and the reason correctly explains the assertion" / "Both are true, but the reason does not explain the assertion" / "The assertion is true, but the reason is false" / "The assertion is false, but the reason is true");
+    - for senior classes only and at most one or two per set, statements numbered I, II, III, IV on new lines with options such as "I and II only", "I, II and III only";
+    - calculation or reading of a value, where the material has numbers.
+    Wrong options are real terms or statements from the same topic (other organelles, other arms of government), the same kind of thing as the answer, of similar length and grammar, and based on likely misconceptions, so none can be ruled out by its form. Never "all/none of the above". Avoid negative stems; when one is needed write NOT in capitals.`,
   tf: '"tf": one clear, checkable statement; a false one should be a believable mistake (a swapped term, wrong figure or wrong cause), not nonsense; options ["True","False"]; correct_option 0 for true, 1 for false',
-  short: '"short": a theory question that opens with an exam command word suited to its skill (Define, State, List, Outline, Describe, Explain, Distinguish between, Compare, Give reasons why, Calculate), with (a), (b) sub-parts on new lines when useful; model_answer holds the ideal answer and key_points 2-5 short marking points (the words a marker looks for); options empty, correct_option -1',
+  short: `"short": a theory question. Use the command word that matches the depth wanted: Define / State / List / Name (recall, 1 mark per point), Describe / Outline (features or steps, in order where relevant), Explain / Give reasons why (cause and effect), Distinguish between / Compare (two ideas side by side), Calculate, Discuss / Evaluate (senior classes). Write some as structured questions: parts (a), (b), (c) on new lines that build from recall to reasoning on one topic, each ending with its marks in square brackets, e.g. "(a) Define digestion. [2 marks]". model_answer answers each part on its own line; key_points 2-8 short marking points (the words a marker looks for); options empty, correct_option -1`,
 };
 const DIFFICULTY: Record<string, string> = {
   easy: "mostly recall (about 60%) with some understanding (40%)",
