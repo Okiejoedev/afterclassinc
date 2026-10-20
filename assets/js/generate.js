@@ -12,7 +12,9 @@ export const LEVELS = [
   ["p46", "Primary 4–6"],
   ["jss", "Junior secondary (JSS)"],
   ["sss", "Senior secondary (SSS / WAEC level)"],
-  ["uni", "University / professional"],
+  ["uni", "University (degree)"],
+  ["poly", "Polytechnic (ND / HND)"],
+  ["coe", "College of Education / other colleges (NCE, diploma)"],
   ["adult", "Workshop / webinar audience"],
 ];
 export const DIFFICULTY = [["easy", "Easy recall"], ["mixed", "Mixed"], ["hard", "Challenging"]];

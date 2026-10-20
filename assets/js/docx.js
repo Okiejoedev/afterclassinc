@@ -72,7 +72,7 @@ export async function buildExamDocx({ school, ex, papers, key, headerFields }) {
 
   for (const [pi, p] of papers.entries()) {
     await header(pi === 0, p.typeLabel, [ex.title, ex.session].filter(Boolean).join(" · "));
-    if (ex.candidate) { body.push(blank("Name:")); body.push(blank(ex.style === "university" ? "Matric No:" : "Exam No:")); }
+    if (ex.candidate) { body.push(blank("Name:")); body.push(blank(({ university: "Matric No", polytechnic: "Matric / Reg No", college: "Reg No" }[ex.style] || "Exam No") + ":")); }
     if (p.general) body.push(para(run("Instructions: ", { b: true, i: true }) + run(p.general, { i: true }), { after: 160 }));
     if (p.obj.length) {
       body.push(para(run(p.headA, { b: true, caps: true }), { rule: true, keepNext: true, before: 120 }));

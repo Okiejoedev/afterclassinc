@@ -4,7 +4,7 @@ import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, ask, fmtDate } from "./ui.js";
 import { ctx } from "./shell.js";
 
-const KINDS = [["primary", "Primary school"], ["secondary", "Secondary school"], ["university", "University / polytechnic / college"], ["training", "Training / webinars / church / NGO"]];
+const KINDS = [["primary", "Primary school"], ["secondary", "Secondary school"], ["university", "University"], ["polytechnic", "Polytechnic / monotechnic"], ["college", "College (education, nursing, health, agriculture…)"], ["training", "Training / webinars / church / NGO"]];
 
 // The heading to use on papers: the school account if the teacher has one,
 // otherwise their personal details.

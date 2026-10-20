@@ -14,7 +14,7 @@ export const ctx = {
 // Words that change with the audience.
 export function words(kind = ctx.kind) {
   if (kind === "training") return { learners: "participants", learner: "participant", teacher: "presenter", Learners: "Participants" };
-  if (kind === "university") return { learners: "students", learner: "student", teacher: "lecturer", Learners: "Students" };
+  if (kind === "university" || kind === "polytechnic" || kind === "college") return { learners: "students", learner: "student", teacher: "lecturer", Learners: "Students" };
   return { learners: "students", learner: "student", teacher: "teacher", Learners: "Students" };
 }
 

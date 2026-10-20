@@ -19,7 +19,7 @@ create table if not exists public.schools (
   motto            text not null default '',
   contact          text not null default '',
   logo             text check (logo is null or length(logo) < 600000),
-  kind             text not null default 'secondary' check (kind in ('primary', 'secondary', 'university', 'training')),
+  kind             text not null default 'secondary',
   require_approval boolean not null default false,
   retention_days   int not null default 365 check (retention_days between 30 and 3650),
   join_code        text not null unique default upper(substr(md5(random()::text), 1, 8)),
@@ -51,6 +51,9 @@ create table if not exists public.school_profiles (
 );
 alter table public.school_profiles add column if not exists kind text not null default 'secondary';
 alter table public.school_profiles add column if not exists retention_days int not null default 365;
+-- Institution types: university, polytechnic and college are separate.
+alter table public.schools drop constraint if exists schools_kind_check;
+alter table public.schools add constraint schools_kind_check check (kind in ('primary', 'secondary', 'university', 'polytechnic', 'college', 'training'));
 
 create table if not exists public.quizzes (
   id          uuid primary key default gen_random_uuid(),

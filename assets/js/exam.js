@@ -14,14 +14,20 @@ function currentSession() {
   const d = new Date(), y = d.getFullYear(), start = d.getMonth() >= 8 ? y : y - 1; // Nigerian academic year starts in September
   return `${start}/${start + 1} Academic Session`;
 }
+// University, polytechnic and college papers share a tertiary layout, with their own labels.
+export const TERTIARY = ["university", "polytechnic", "college"];
+export const tertiary = (ex) => TERTIARY.includes(ex.style);
+export const numberLabel = (ex) => ({ university: "Matric No", polytechnic: "Matric / Reg No", college: "Reg No" }[ex.style] || "Exam No");
+const levelHint = { university: "e.g. 300 Level", polytechnic: "e.g. ND II / HND I", college: "e.g. NCE 2" };
+
 function defaults(quiz, kind) {
-  const uni = kind === "university";
+  const uni = TERTIARY.includes(kind);
   return {
-    style: uni ? "university" : "school",
+    style: uni ? kind : "school", level: "",
     title: uni ? "First Semester Examination" : "First Term Examination", session: currentSession(),
     subject: quiz.title, klass: "", duration: uni ? "2 hours" : "1 hour 30 minutes", date: "",
     faculty: "", department: "", courseCode: "", courseTitle: quiz.title, units: "", examiner: "",
-    instrGeneral: uni ? "Answer questions as instructed in each section. Write your matriculation number on every answer booklet."
+    instrGeneral: uni ? `Answer questions as instructed in each section. Write your ${kind === "university" ? "matriculation" : kind === "polytechnic" ? "matriculation or registration" : "registration"} number on every answer booklet.`
       : "Write your name and examination number in the spaces provided. Do not write anything on this question paper except where you are asked to.",
     headA: uni ? "Section A: Objective Questions" : "Section A: Objective Questions",
     headB: uni ? "Section B: Essay Questions" : "Section B: Theory Questions",
@@ -74,8 +80,8 @@ function paperModel(quiz, ex, vi) {
   };
 }
 
-const metaFields = (ex) => ex.style === "university"
-  ? [["Faculty", ex.faculty], ["Department", ex.department], ["Course", [ex.courseCode, ex.courseTitle].filter(Boolean).join(": ")], ["Units", ex.units], ["Time", ex.duration], ["Date", ex.date], ["Examiner", ex.examiner]]
+const metaFields = (ex) => tertiary(ex)
+  ? [[ex.style === "university" ? "Faculty" : "School", ex.faculty], ["Department", ex.department], [ex.style === "university" ? "Level" : "Programme", ex.level], ["Course", [ex.courseCode, ex.courseTitle].filter(Boolean).join(": ")], [ex.style === "polytechnic" ? "Credit units" : "Units", ex.units], ["Time", ex.duration], ["Date", ex.date], ["Examiner", ex.examiner]]
   : [["Subject", ex.subject], ["Class", ex.klass], ["Time", ex.duration], ["Date", ex.date]];
 
 export function headerHTML(school, ex, typeLabel = "") {
@@ -94,7 +100,7 @@ export function headerHTML(school, ex, typeLabel = "") {
 }
 
 function candHTML(ex) {
-  return ex.candidate ? `<div class="cand"><span>Name: <i></i></span><span class="sm">${ex.style === "university" ? "Matric No" : "Exam No"}: <i></i></span></div>` : "";
+  return ex.candidate ? `<div class="cand"><span>Name: <i></i></span><span class="sm">${numberLabel(ex)}: <i></i></span></div>` : "";
 }
 
 function paperHTML(school, ex, m, draft) {
@@ -104,7 +110,7 @@ function paperHTML(school, ex, m, draft) {
       ${m.obj.length ? `<p><b>${esc(m.headA)}:</b> ${esc(m.instrA)}</p>` : ""}${m.th.length ? `<p><b>${esc(m.headB)}:</b> ${esc(m.instrB)}</p>` : ""}</div>
       <p class="cover-warn">DO NOT OPEN THIS QUESTION PAPER UNTIL YOU ARE TOLD TO DO SO</p></article>` : "";
   return cover + `<article class="paper${draft}" style="font-size:${ex.fontSize}pt">
-    ${ex.cover ? `<div class="ph-mini">${esc(school.name || "")} · ${esc(ex.style === "university" ? [ex.courseCode, ex.title].filter(Boolean).join(" · ") : [ex.subject, ex.klass].filter(Boolean).join(" · "))}${m.typeLabel ? " · " + m.typeLabel : ""}</div>`
+    ${ex.cover ? `<div class="ph-mini">${esc(school.name || "")} · ${esc(tertiary(ex) ? [ex.courseCode, ex.title].filter(Boolean).join(" · ") : [ex.subject, ex.klass].filter(Boolean).join(" · "))}${m.typeLabel ? " · " + m.typeLabel : ""}</div>`
       : `${headerHTML(school, ex, m.typeLabel)}${candHTML(ex)}<p class="instr"><b>Instructions:</b> ${esc(m.general)}</p>`}
     ${m.obj.length ? `<section><h2 class="sec">${esc(m.headA)}</h2>${m.instrA ? `<p class="instr">${esc(m.instrA)}</p>` : ""}
       <ol class="obj">${m.obj.map((x) => `<li><div class="qt">${rt(x.question)}${Number(x.marks) > 0 ? ` <span class="mk">[${fmtMarks(x.mk)}]</span>` : ""}</div>${qimg(x, "pimg")}
@@ -174,14 +180,15 @@ export async function examView(id, frame) {
     ${school.name ? "" : `<div class="notice no-print">Add your school name and logo once under <a href="#/school">School</a> so they appear on every paper.</div>`}
     <div class="exam-layout">
       <form class="panel no-print" id="exForm" style="gap:14px">
-        <div class="field"><label class="label" for="ex-style">Paper style</label><select id="ex-style"><option value="school">Primary / secondary school</option><option value="university">University / polytechnic / college</option></select></div>
+        <div class="field"><label class="label" for="ex-style">Paper style</label><select id="ex-style"><option value="school">Primary / secondary school</option><option value="university">University</option><option value="polytechnic">Polytechnic</option><option value="college">College of Education / other college</option></select></div>
         <h2 style="font-size:18px">Paper heading</h2>
         ${fld("title", "Examination", "text", `list="examTitles"`)}
         <datalist id="examTitles"><option>First Term Examination</option><option>Second Term Examination</option><option>Third Term Examination</option><option>Mid-Term Test</option><option>Continuous Assessment Test</option><option>Mock Examination</option><option>Promotion Examination</option><option>First Semester Examination</option><option>Second Semester Examination</option><option>Resit Examination</option></datalist>
         ${fld("session", "Academic session")}
         <div data-style="school" class="opts">${fld("subject", "Subject")}${fld("klass", "Class", "text", `placeholder="e.g. JSS 2 / SS 1"`)}</div>
-        <div data-style="university" style="display:grid;gap:12px">
-          <div class="opts">${fld("faculty", "Faculty")}${fld("department", "Department")}</div>
+        <div data-style="tertiary" style="display:grid;gap:12px">
+          <div class="opts">${fld("faculty", "Faculty / School")}${fld("department", "Department")}</div>
+          ${fld("level", "Level / programme", "text", `placeholder="${levelHint[ex.style] || "e.g. 300 Level / ND II / NCE 2"}"`)}
           <div class="opts">${fld("courseCode", "Course code", "text", `placeholder="e.g. BIO 201"`)}${fld("units", "Units", "text", `placeholder="e.g. 3"`)}</div>
           ${fld("courseTitle", "Course title")}${fld("examiner", "Examiner(s)")}
         </div>
@@ -215,7 +222,7 @@ export async function examView(id, frame) {
       <div class="paper-wrap" id="paperWrap"><div id="papers"></div></div>
     </div>`;
 
-  for (const k of ["style", "title", "session", "subject", "klass", "faculty", "department", "courseCode", "units", "courseTitle", "examiner", "duration", "date", "headA", "headB", "instrBExtra", "marksA", "marksB", "closing", "answerAny", "versions", "lines", "fontSize"])
+  for (const k of ["style", "title", "session", "subject", "klass", "faculty", "department", "level", "courseCode", "units", "courseTitle", "examiner", "duration", "date", "headA", "headB", "instrBExtra", "marksA", "marksB", "closing", "answerAny", "versions", "lines", "fontSize"])
     $("#ex-" + k, v).value = String(ex[k] ?? "");
   for (const k of ["candidate", "omr", "key", "cover"]) $("#ex-" + k, v).checked = !!ex[k];
   const NUM = new Set(["answerAny", "versions", "lines", "fontSize", "marksA", "marksB"]);
@@ -232,7 +239,7 @@ export async function examView(id, frame) {
   };
   const render = () => {
     read();
-    v.querySelectorAll("[data-style]").forEach((el) => (el.hidden = el.dataset.style !== ex.style));
+    v.querySelectorAll("[data-style]").forEach((el) => (el.hidden = el.dataset.style !== (tertiary(ex) ? "tertiary" : "school")));
     $("#papers", v).innerHTML = buildPapers(quiz, school, ex, draft);
     renderMath($("#papers", v));
     fit();
@@ -246,7 +253,18 @@ export async function examView(id, frame) {
     saveT = setTimeout(() => sb.from("quizzes").update({ exam: ex }).eq("id", quiz.id).then(({ error }) => error && toast("Couldn't save settings: " + error.message, true)), 800);
   });
   $("#exForm", v).addEventListener("submit", (e) => e.preventDefault());
-  const fileName = () => [ex.style === "university" ? ex.courseCode || ex.courseTitle : ex.subject, ex.style === "university" ? "" : ex.klass, ex.title].filter(Boolean).join(" - ");
+  // Changing school <-> university/polytechnic/college: swap the wording the teacher hasn't changed.
+  $("#ex-style", v).addEventListener("change", () => {
+    const now = defaults(quiz, TERTIARY.includes(ex.style) ? ex.style : school.kind === "primary" ? "primary" : "secondary");
+    const swaps = { "First Term Examination": "First Semester Examination", "Second Term Examination": "Second Semester Examination", "First Semester Examination": "First Term Examination", "Second Semester Examination": "Second Term Examination" };
+    const term = /Term/.test(ex.title), sem = /Semester/.test(ex.title);
+    if ((tertiary(ex) && term) || (!tertiary(ex) && sem)) $("#ex-title", v).value = swaps[ex.title] || now.title;
+    const known = new Set(TERTIARY.concat("school").map((st) => defaults(quiz, st === "school" ? "secondary" : st).instrGeneral));
+    if (known.has(ex.instrGeneral)) $("#ex-instrGeneral", v).value = now.instrGeneral;
+    const lv = $("#ex-level", v); if (lv) lv.placeholder = levelHint[ex.style] || "";
+    $("#exForm", v).dispatchEvent(new Event("input"));
+  });
+  const fileName = () => [tertiary(ex) ? ex.courseCode || ex.courseTitle : ex.subject, tertiary(ex) ? ex.level : ex.klass, ex.title].filter(Boolean).join(" - ");
   $("#print", v).onclick = () => {
     if (!usable.length) return toast("This quiz has no exam questions yet", true);
     const old = document.title, z = $("#papers", v).style.zoom;

@@ -68,7 +68,9 @@ const LEVEL: Record<string, string> = {
   p46: "pupils aged 9-11 (Primary 4-6): short sentences and simple words",
   jss: "junior secondary students (JSS 1-3, ages 11-14)",
   sss: "senior secondary students (SSS 1-3), in the style of WAEC/NECO questions",
-  uni: "university / polytechnic students, in the style of a university examination",
+  uni: "university undergraduates, in the style of a Nigerian university semester examination: theory, analysis and evaluation as well as recall",
+  poly: "polytechnic students (ND / HND), in the style of a polytechnic semester examination: practical and applied, with procedures, calculations, tools, materials and workplace situations",
+  coe: "College of Education students (NCE) and students of other colleges (nursing, health technology, agriculture), in the style of their semester examinations: sound subject knowledge plus how it is taught or applied in practice (for NCE, include questions on teaching the topic to pupils)",
   adult: "adult professionals at a workshop, seminar or webinar",
 };
 const LANGS = ["English", "French", "Hausa", "Igbo", "Yoruba", "Nigerian Pidgin"];

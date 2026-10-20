@@ -20,7 +20,7 @@ export async function editorView(id, opts = {}) {
   const markDirty = (val = true) => { dirty = val; const s = $("#saveState"); if (s) s.textContent = val ? "Unsaved changes" : "All changes saved"; };
   ctx.leaveGuard = async () => !dirty || await ask("You have unsaved changes. Leave without saving?", "Leave", true);
   window.onbeforeunload = () => (dirty ? true : undefined);
-  const defLevel = { primary: "p46", secondary: "jss", university: "uni", training: "adult" }[ctx.kind] || "jss";
+  const defLevel = { primary: "p46", secondary: "jss", university: "uni", polytechnic: "poly", college: "coe", training: "adult" }[ctx.kind] || "jss";
   const inSchool = !!ctx.head?.school;
 
   const v = frame("quizzes", `

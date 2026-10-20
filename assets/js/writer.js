@@ -333,7 +333,7 @@ function candidates(facts, opts) {
   const sameSeg = (f, p) => segOf.get(String(p).toLowerCase()) === f.seg;
   const defTerms = new Set(defs.map((f) => f.term.toLowerCase()));   // other concepts make better wrong answers than examples
   const young = opts.level === "p13" || opts.level === "p46";
-  const senior = ["sss", "uni", "adult"].includes(opts.level) || (opts.level === "jss" && opts.difficulty === "hard");
+  const senior = ["sss", "uni", "poly", "coe", "adult"].includes(opts.level) || (opts.level === "jss" && opts.difficulty === "hard");
   const out = [];
   // An option that appears in the question gives the game away (or makes no sense): drop the question.
   const inStem = (o, stem) => new RegExp("\\b" + esc(String(o).toLowerCase()) + "\\b").test(stem.toLowerCase());
