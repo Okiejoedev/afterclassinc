@@ -45,7 +45,7 @@ mark { background: linear-gradient(transparent 12%, var(--hi) 12%, var(--hi) 88%
 .btn.big { padding: 13px 24px; font-size: 17px; }
 .btn.sm { padding: 5px 11px; font-size: 13px; }
 .btn.ghost { border-color: transparent; background: transparent; }
-input[type=text], input[type=email], input[type=password], input[type=number], input[type=datetime-local], select, textarea {
+input[type=text], input[type=search], input[type=email], input[type=password], input[type=number], input[type=datetime-local], select, textarea {
   border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: var(--surface); width: 100%; min-width: 0;
 }
 textarea { resize: vertical; line-height: 1.5; }
@@ -504,3 +504,9 @@ body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in s
 .trend.up { color: var(--good); } .trend.down { color: var(--bad); } .trend.flat { color: var(--muted); }
 .update-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 150; display: flex; gap: 12px; align-items: center; background: var(--ink); color: var(--bg); padding: 10px 12px 10px 18px; border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 14px; font-weight: 700; max-width: calc(100% - 32px); }
 @media (max-width: 520px) { .update-bar { border-radius: 14px; flex-direction: column; align-items: stretch; text-align: center; } }
+.inst-find { position: relative; }
+.inst-list { position: absolute; z-index: 40; top: calc(100% - 22px); left: 0; right: 0; margin: 0; padding: 6px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.18); max-height: 340px; overflow: auto; }
+.inst-list li { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.inst-list li span { font-size: 12px; color: var(--muted); }
+.inst-list li:hover, .inst-list li:focus { background: var(--sunk); outline: none; }
+.inst-list li.muted { cursor: default; font-size: 14px; }

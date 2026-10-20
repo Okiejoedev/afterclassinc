@@ -6,6 +6,60 @@ import { ctx } from "./shell.js";
 
 const KINDS = [["primary", "Primary school"], ["secondary", "Secondary school"], ["university", "University"], ["polytechnic", "Polytechnic / monotechnic"], ["college", "College (education, nursing, health, agriculture…)"], ["training", "Training / webinars / church / NGO"]];
 
+// Directory of Nigerian universities, polytechnics and colleges of education
+// (assets/data/institutions.json, built from the NUC, NBTE and NCCE registers).
+// Loaded only when someone searches. Entries: n name, t type (u/p/c), o owner, s state, c city, m motto, w website.
+let directory = null;
+const TYPE_OF = { u: "university", p: "polytechnic", c: "college" };
+const TYPE_NAME = { u: "University", p: "Polytechnic", c: "College of Education" };
+const OWNER = { F: "Federal", S: "State", P: "Private", O: "Other" };
+// Common short names people type.
+const ALIAS = { unilag: "university of lagos", unn: "university of nigeria", ui: "university of ibadan", oau: "obafemi awolowo", abu: "ahmadu bello", uniben: "university of benin", unilorin: "university of ilorin", uniport: "university of port harcourt", futa: "federal university of technology, akure", futo: "federal university of technology, owerri", futminna: "federal university of technology, minna", lasu: "lagos state university", yabatech: "yaba college of technology", unical: "university of calabar", uniuyo: "university of uyo", unijos: "university of jos", buk: "bayero university", unizik: "nnamdi azikiwe", unimaid: "university of maiduguri", fce: "federal college of education", coe: "college of education", poly: "polytechnic", laspotech: "lagos state polytechnic", lasustech: "lagos state university of science and technology", imt: "institute of management and technology", auchi: "auchi polytechnic", kadpoly: "kaduna polytechnic" };
+function instFinder(v) {
+  const input = $("#instQ", v), list = $("#instList", v);
+  let hits = [];
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const search = async () => {
+    const raw = norm(input.value);
+    if (raw.length < 2) { list.hidden = true; return; }
+    if (!directory) {
+      list.hidden = false; list.innerHTML = `<li class="muted">Loading the directory…</li>`;
+      try { directory = await (await fetch(new URL("../assets/data/institutions.json", location.href))).json(); directory.forEach((d) => (d._k = norm(`${d.n} ${d.c || ""} ${d.s || ""}`))); }
+      catch { list.innerHTML = `<li class="muted">Couldn't load the directory. Check your connection.</li>`; return; }
+    }
+    // Whole-name short forms (unilag, futa) and word short forms (fce zaria, coe oro, fed poly bida).
+    const WORD = { fce: "federal college of education", coe: "college of education", fut: "federal university of technology", poly: "polytechnic", fed: "federal", uni: "university", univ: "university", tech: "technology", edu: "education" };
+    const words = (ALIAS[raw] ? norm(ALIAS[raw]) : raw.split(" ").map((w) => WORD[w] || w).join(" ")).split(" ");
+    const find = (ws) => directory.filter((d) => ws.every((w) => d._k.includes(w))).sort((a, b) => a.n.length - b.n.length).slice(0, 8);
+    hits = find(words);
+    // Renamed institutions (many FCEs are now Federal Universities of Education): fall back to the town.
+    if (!hits.length) { const place = raw.split(" ").filter((w) => !WORD[w] && w.length > 2); if (place.length) hits = find(place); }
+    list.hidden = false;
+    list.innerHTML = hits.length ? hits.map((d, i) => `<li role="option" data-i="${i}" tabindex="-1"><b>${esc(d.n)}</b><span>${TYPE_NAME[d.t]} · ${OWNER[d.o] || ""}${d.s ? " · " + esc(d.s) + (d.s === "FCT" ? "" : " State") : ""}</span></li>`).join("")
+      : `<li class="muted">Not found. Type your institution's name in the boxes below instead.</li>`;
+  };
+  const choose = (d) => {
+    const place = [d.c, d.s && (d.s === "FCT" ? "Federal Capital Territory" : d.s + " State")].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(", ");
+    $("#sName", v).value = d.n;
+    if (place) $("#sAddr", v).value = place;
+    if (d.m) $("#sMotto", v).value = d.m;
+    if (d.w && !$("#sContact", v).value) $("#sContact", v).value = d.w.replace(/^https?:\/\//, "");
+    $("#sKind", v).value = TYPE_OF[d.t];
+    input.value = ""; list.hidden = true;
+    toast("Details filled in. Upload your logo, check them, then Save.");
+    $("#logoBox", v).scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  let t;
+  input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 150); });
+  list.addEventListener("click", (e) => { const li = e.target.closest("[data-i]"); if (li) choose(hits[+li.dataset.i]); });
+  list.addEventListener("keydown", (e) => { const li = e.target.closest("[data-i]"); if (li && e.key === "Enter") { e.preventDefault(); choose(hits[+li.dataset.i]); } });
+  input.addEventListener("keydown", (e) => { if (e.key === "ArrowDown" && !list.hidden) { e.preventDefault(); list.querySelector("[data-i]")?.focus(); } if (e.key === "Enter") { e.preventDefault(); if (hits[0]) choose(hits[0]); } });
+  list.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); e.target.nextElementSibling?.focus(); }
+    if (e.key === "ArrowUp") { e.preventDefault(); (e.target.previousElementSibling || input).focus(); }
+  });
+}
+
 // The heading to use on papers: the school account if the teacher has one,
 // otherwise their personal details.
 export async function loadHeader() {
@@ -35,6 +89,10 @@ export async function schoolView(frame) {
       <form class="panel" id="schoolForm">
         <h2 style="font-size:20px">Heading on exam papers</h2>
         ${!isAdmin ? `<p class="notice" style="margin:0">Only the school admin can change these details.</p>` : ""}
+        ${isAdmin ? `<div class="field inst-find"><label class="label" for="instQ">Start from your institution</label>
+          <input id="instQ" type="search" autocomplete="off" placeholder="University, polytechnic or college of education, e.g. Yaba, UNN, FCE Zaria" aria-controls="instList">
+          <ul class="inst-list" id="instList" role="listbox" hidden></ul>
+          <small class="muted">From the official NUC, NBTE and NCCE registers. Fills in the name, place, type and motto; then upload your institution's logo below.</small></div>` : ""}
         <div class="field"><label class="label" for="sName">School name</label><input id="sName" type="text" maxlength="120" placeholder="e.g. Kings College, Lagos" value="${esc(p.name)}"></div>
         <div class="field"><label class="label" for="sAddr">Address</label><input id="sAddr" type="text" maxlength="200" value="${esc(p.address)}"></div>
         <div class="field"><label class="label" for="sMotto">Motto (optional)</label><input id="sMotto" type="text" maxlength="120" value="${esc(p.motto)}"></div>
@@ -67,6 +125,7 @@ export async function schoolView(frame) {
     try { logo = await shrinkImage(f, 360); $("#logoBox", v).innerHTML = `<img src="${logo}" alt="School logo">`; $("#logoDel", v).hidden = false; }
     catch { toast("That image could not be read. Try a PNG or JPG.", true); }
   };
+  if ($("#instQ", v)) instFinder(v);
   $("#logoDel", v).onclick = () => { logo = null; $("#logoBox", v).innerHTML = `<span class="muted" style="font-size:12px">No logo</span>`; $("#logoDel", v).hidden = true; };
   $("#schoolForm", v).onsubmit = async (e) => {
     e.preventDefault();

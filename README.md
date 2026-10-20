@@ -239,6 +239,10 @@ Edit a file and upload it to GitHub again (or `git commit` + `git push`). GitHub
 
 The `local-demo` folder (next to this one, not uploaded to GitHub) runs the whole site on your own computer with a local copy of the database. Double-click **Start Afterclass demo.bat**. It uses the same database rules as Supabase, but the AI writer is off.
 
+## Institution directory
+
+`assets/data/institutions.json` lists 790 Nigerian universities, polytechnics and colleges of education, used by **School → Start from your institution** to fill in the exam-paper heading. It was built in October 2026 from the official registers: the [NUC](https://www.nuc.edu.ng) university lists (federal, state, private), the [NBTE register](https://www.digitalnbte.nbte.gov.ng/Public/Institutions?type=polytechnic) of polytechnics and the [NCCE](https://ncce.gov.ng/AccreditedColleges) list of NCE-awarding colleges. Mottos, towns and states were added from Wikipedia only where the article clearly matched the institution. Logos are not included: each institution's crest belongs to it, so lecturers upload their own on the School page.
+
 ## Files
 
 ```
