@@ -2,7 +2,7 @@
 //   ?s=<session>      live game: phones join with a PIN
 //   ?teams=<quiz>     class teams: no phones; the teacher scores teams
 import { sb, configured, rpc, q } from "./sb.js";
-import { $, esc, rt, LET, TYPE_NAME, toast, ask, loadScript, confetti, store, qimg, renderMath, speak, canSpeak, questionSpeech } from "./ui.js";
+import { $, esc, rt, LET, TYPE_NAME, toast, ask, loadScript, confetti, store, qimg, renderMath, speak, canSpeak, questionSpeech, waButton } from "./ui.js";
 import { sfx, unlock, soundOn, setSound, startMusic, stopMusic } from "./sound.js";
 
 const stage = $("#stage"), hud = $("#hud"), tools = $("#tools"), qaPanel = $("#qaPanel");
@@ -122,7 +122,7 @@ async function lobby() {
         <span class="label" style="margin-top:10px">and enter game PIN</span><div class="big-pin">${S.pin.slice(0, 3)} ${S.pin.slice(3)}</div>
         ${S.class_id ? `<span class="muted">Use your admission / matric number and your name as on the class list</span>` : ""}</div>
         <div class="qr" id="qr" aria-label="QR code to join"></div></div>
-      <div class="row" style="justify-content:center"><span class="muted" id="pc"></span><button class="btn primary big" id="start" type="button">Start</button></div>
+      <div class="row" style="justify-content:center"><span class="muted" id="pc"></span>${waButton(`Join "${S.title}" on Afterclass: open ${joinUrl} (game PIN ${S.pin.slice(0, 3)} ${S.pin.slice(3)})`, "Share on WhatsApp", "btn big")}<button class="btn primary big" id="start" type="button">Start</button></div>
       <p class="muted" style="margin:0;font-size:14px">${web ? "Share this screen in Zoom / Google Meet, or paste the link in the chat. " : ""}Click a name to remove someone. Press Space to start.</p>
       <div class="players" id="plist"></div></div>`;
   renderLobbyPlayers();

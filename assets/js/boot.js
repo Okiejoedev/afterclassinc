@@ -16,5 +16,10 @@
     b.innerHTML = msg + ' <button type="button" class="btn sm" onclick="location.reload()">Try again</button>';
   }
   setTimeout(function () { stuck("This is taking longer than usual. Your connection may be slow."); }, 15000);
+  // Installable app + opens offline from the last saved copy (sw.js, site root).
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    var root = new URL("../../", document.currentScript.src);
+    addEventListener("load", function () { navigator.serviceWorker.register(new URL("sw.js", root).href, { scope: root.pathname }).catch(function () {}); });
+  }
   addEventListener("error", function (e) { if (/could not load/i.test((e && e.message) || "")) stuck("Afterclass could not load."); });
 })();

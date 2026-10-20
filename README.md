@@ -239,6 +239,28 @@ Edit a file and upload it to GitHub again (or `git commit` + `git push`). GitHub
 
 The `local-demo` folder (next to this one, not uploaded to GitHub) runs the whole site on your own computer with a local copy of the database. Double-click **Start Afterclass demo.bat**. It uses the same database rules as Supabase, but the AI writer is off.
 
+## Running the MVP
+
+**Before launch:** work through [TESTING.md](TESTING.md) with three phones.
+
+**Your admin page.** In Supabase → SQL Editor, run this once with your own email:
+
+```sql
+insert into public.app_admins select id from auth.users where email = 'you@example.com';
+```
+
+Sign out and in again: an **Admin** tab appears in the dashboard with sign-ups, usage for the last 14 days and the messages people send with **Report a problem**.
+
+**Emails (sign-up confirmation, password reset).** Supabase's built-in email sender is only for testing: it sends very few emails an hour and may only deliver to your own team. Before real users arrive, either
+- connect a free email service: Supabase → Authentication → Emails → SMTP Settings, using e.g. [Resend](https://resend.com) or [Brevo](https://www.brevo.com) (both have free plans), or
+- turn off **Confirm email** (Authentication → Sign In / Providers → Email) so people can sign in straight away.
+
+Also set **Authentication → URL Configuration → Site URL** to your live address, and add it under **Redirect URLs** with `**` at the end, so confirmation links don't point to "localhost".
+
+**Backups.** The free Supabase plan has no automatic backups. Once a week: Supabase → Database → Backups (paid plans), or SQL Editor → run a `select` on the main tables and download as CSV. Teachers can also save their own copy with **School → Download my data**.
+
+**Install as an app.** The site is a Progressive Web App: on Android, Chrome's menu → **Install app**; on iPhone, Safari → Share → **Add to Home Screen**.
+
 ## Institution directory
 
 `assets/data/institutions.json` lists 790 Nigerian universities, polytechnics and colleges of education, used by **School → Start from your institution** to fill in the exam-paper heading. It was built in October 2026 from the official registers: the [NUC](https://www.nuc.edu.ng) university lists (federal, state, private), the [NBTE register](https://www.digitalnbte.nbte.gov.ng/Public/Institutions?type=polytechnic) of polytechnics and the [NCCE](https://ncce.gov.ng/AccreditedColleges) list of NCE-awarding colleges. Mottos, towns and states were added from Wikipedia only where the article clearly matched the institution. Logos are not included: each institution's crest belongs to it, so lecturers upload their own on the School page.

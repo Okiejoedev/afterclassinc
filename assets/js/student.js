@@ -59,7 +59,7 @@ function joinScreen(pinPrefill = "", err = "") {
       <input id="pin" type="text" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="000 000" value="${esc(pinPrefill)}" required aria-describedby="err">
       <button class="btn primary" type="submit">Enter</button>
       <p class="status" id="err" role="alert" style="text-align:center;color:#FF8E86">${esc(err)}</p>
-      <p class="muted" style="text-align:center;font-size:14px;margin-top:8vh"><a href="./" style="color:var(--hi)">← Back to home</a><br><a href="privacy.html" style="color:var(--stage-muted)">Privacy notice</a></p>
+      <p class="muted" style="text-align:center;font-size:14px;margin-top:8vh"><a href="./" style="color:var(--hi)">← Back to home</a><br><a href="privacy.html" style="color:var(--stage-muted)">Privacy notice</a> · <a href="#" data-fb style="color:var(--stage-muted)">Report a problem</a></p>
     </form>`, false);
   const pin = $("#pin");
   if (!pinPrefill) pin.focus();

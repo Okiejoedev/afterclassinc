@@ -30,6 +30,7 @@ if (!configured) {
     if (event === "PASSWORD_RECOVERY") { recovering = true; return renderNewPassword(); }
     if (event !== "SIGNED_IN" && event !== "SIGNED_OUT") return;
     const was = ctx.user?.id; ctx.user = session?.user ?? null;
+    if (ctx.user?.id !== was) ctx.isAdmin = undefined;
     if (booted && !recovering && ctx.user?.id !== was) { ctx.head = null; ctx.isStudent = undefined; route(); }
   });
   const { data } = await sb.auth.getSession();
@@ -69,6 +70,7 @@ function renderAuth(mode = "in") {
       ${mode === "up" ? `<div class="field"><label class="label" for="fullName">Full name</label><input id="fullName" type="text" maxlength="80" autocomplete="name" required placeholder="e.g. Mrs. Bello"></div>` : ""}
       <div class="field"><label class="label" for="email">Email</label><input id="email" type="email" autocomplete="email" required></div>
       ${mode === "reset" ? "" : `<div class="field"><label class="label" for="pw">Password</label><input id="pw" type="password" minlength="8" autocomplete="${mode === "up" ? "new-password" : "current-password"}" required></div>`}
+      ${mode === "up" ? `<label class="check" style="border:0;padding:0;align-items:flex-start"><input type="checkbox" id="terms"> <span style="font-size:14px">I agree to the <a href="../terms.html" target="_blank" rel="noopener">terms of use</a> and <a href="../privacy.html" target="_blank" rel="noopener">privacy notice</a>.</span></label>` : ""}
       <button class="btn primary big" type="submit">${mode === "up" ? "Create account" : mode === "reset" ? "Send reset link" : "Sign in"}</button>
       <div class="status" id="authStatus" role="status"></div>
     </form>
@@ -83,6 +85,7 @@ function renderAuth(mode = "in") {
     try {
       if (mode === "in") { const { error } = await sb.auth.signInWithPassword({ email, password: pw }); if (error) throw error; }
       else if (mode === "up") {
+        if (!$("#terms").checked) throw new Error("Please accept the terms of use to continue.");
         const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { role: "teacher", full_name: $("#fullName").value.trim() }, emailRedirectTo: location.href.split("#")[0] } });
         if (error) throw error;
         if (!data.session) { st.textContent = "Check your email and click the confirmation link, then sign in."; return; }
@@ -115,6 +118,7 @@ async function route() {
   ctx.leaveGuard = null; window.onbeforeunload = null;
   currentHash = location.hash;
   if (!ctx.head) { ctx.head = await loadHeader().catch(() => ({ profile: { kind: "secondary" } })); autoPurge(); }
+  if (ctx.isAdmin === undefined) ctx.isAdmin = await rpc("is_app_admin", {}).catch(() => false);
   if (await isStudent()) return renderStudentAccount();
   const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");
@@ -131,6 +135,7 @@ async function route() {
     if (page === "review") return await (await report()).reviewView(id);
     if (page === "school") { await schoolView(frame); ctx.head = await loadHeader(); return; }
     if (page === "quizzes") return await quizzesView();
+    if (page === "admin" && ctx.isAdmin) return await (await import("./admin.js")).adminView();
     return await overviewView();
   } catch (e) { frame("", `<div class="notice">${esc(e.message)}</div>`); }
 }

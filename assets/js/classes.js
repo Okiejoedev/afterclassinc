@@ -1,7 +1,7 @@
 // Class lists (rosters): admission / matric numbers and names, so graded
 // tests have one attempt per student and results carry real names.
 import { sb, q, rpc } from "./sb.js";
-import { $, esc, toast, ask, fmtDate } from "./ui.js";
+import { $, esc, toast, ask, fmtDate, waButton } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
 
 export async function classesView() {
@@ -61,7 +61,8 @@ export async function classView(id) {
       <div class="row"><button class="btn" id="rename" type="button">Rename</button><button class="btn ghost danger" id="delClass" type="button">Delete class</button></div></div>
     ${cls.join_code ? `<section class="panel" style="grid-template-columns:auto minmax(0,1fr);align-items:center">
       <button class="code-pill" id="code" type="button" style="font-size:26px;padding:12px 16px" title="Copy code">${esc(cls.join_code)}</button>
-      <div><b>Class code</b><p class="muted" style="margin:2px 0 0;font-size:14px">${w.Learners} register on the home page (${esc(new URL("../", location.href).href)}) and enter this code to join. They're added to the list below, and tests you set for this class show up on their dashboard.</p></div></section>` : ""}
+      <div><b>Class code</b><p class="muted" style="margin:2px 0 0;font-size:14px">${w.Learners} register on the home page (${esc(new URL("../", location.href).href)}) and enter this code to join. They're added to the list below, and tests you set for this class show up on their dashboard.</p>
+        <div class="row" style="margin-top:8px">${waButton(`Join our class "${cls.name}" on Afterclass: register at ${new URL("../", location.href).href} and enter the class code ${cls.join_code}.`, "Send code on WhatsApp", "btn sm")}</div></div></section>` : ""}
     ${cls.leaderboard !== undefined ? `<section class="panel"><div class="spread"><h2 style="font-size:20px">Leaderboard</h2>
       <label class="check"><input type="checkbox" id="lbShow" ${cls.leaderboard ? "checked" : ""}> Show top 10 to ${w.learners}</label></div>
       <p class="muted" style="margin:0;font-size:14px">Average score over this class's tests and live games (games with hidden scores don't count). ${w.Learners} see the top 10 and their own place, never the bottom of the list.</p>

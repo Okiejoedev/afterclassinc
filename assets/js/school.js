@@ -1,7 +1,7 @@
 // School tab: the heading printed on exam papers, school accounts (shared logo,
 // members, Head of Department reviews) and data-protection settings.
 import { sb, q, rpc } from "./sb.js";
-import { $, esc, toast, ask, fmtDate } from "./ui.js";
+import { $, esc, toast, ask, fmtDate, downloadFile } from "./ui.js";
 import { ctx } from "./shell.js";
 
 const KINDS = [["primary", "Primary school"], ["secondary", "Secondary school"], ["university", "University"], ["polytechnic", "Polytechnic / monotechnic"], ["college", "College (education, nursing, health, agriculture…)"], ["training", "Training / webinars / church / NGO"]];
@@ -112,7 +112,7 @@ export async function schoolView(frame) {
           <p class="muted" style="margin:0;font-size:14px">Results contain students' names. Under the Nigeria Data Protection Act, keep them only as long as you need them.</p>
           <div class="field"><label class="label" for="sRetain">Automatically delete my results older than</label>
             <select id="sRetain">${[90, 180, 365, 730, 1825].map((d) => `<option value="${d}" ${Number(p.retention_days || 365) === d ? "selected" : ""}>${d < 365 ? Math.round(d / 30) + " months" : d / 365 + (d === 365 ? " year" : " years")}</option>`).join("")}</select></div>
-          <div class="row"><button class="btn sm" id="purge" type="button">Delete old results now</button><button class="btn sm ghost danger" id="wipe" type="button">Delete all my data</button></div>
+          <div class="row"><button class="btn sm" id="exportAll" type="button">Download my data</button><button class="btn sm" id="purge" type="button">Delete old results now</button><button class="btn sm ghost danger" id="wipe" type="button">Delete all my data</button></div>
           <p class="muted" style="margin:0;font-size:13px">Students can read the <a href="../privacy.html" target="_blank" rel="noopener">privacy notice</a> from the join page.</p>
         </section>
       </div>
@@ -143,6 +143,27 @@ export async function schoolView(frame) {
       if (!school) await q(sb.from("school_profiles").upsert({ owner_id: auth.user.id, retention_days: days, name: p.name || "", updated_at: new Date().toISOString() }));
       toast("Saved");
     } catch (err) { toast(err.message, true); }
+  };
+  // A personal backup: quizzes, class lists and results in one file (the free database has no backups).
+  $("#exportAll", v).onclick = async (e) => {
+    const b = e.target; b.disabled = true; b.textContent = "Preparing…";
+    try {
+      const me = auth.user.id;
+      const quizzes = await q(sb.from("quizzes").select("*").eq("owner_id", me));
+      const classes = await q(sb.from("classes").select("*").eq("owner_id", me));
+      const students = classes.length ? await q(sb.from("students").select("*").in("class_id", classes.map((c) => c.id))) : [];
+      const sessions = await q(sb.from("sessions").select("*").eq("owner_id", me));
+      const players = [], answers = [];
+      for (let i = 0; i < sessions.length; i += 50) {
+        const ids = sessions.slice(i, i + 50).map((x) => x.id);
+        players.push(...await q(sb.from("players").select("id,session_id,nickname,student_id,email,score,correct,finished_at,joined_at").in("session_id", ids)));
+        answers.push(...await q(sb.from("answers").select("session_id,player_id,q_index,choice,text_answer,is_correct,credit,points").in("session_id", ids)));
+      }
+      const data = { exported_at: new Date().toISOString(), account: auth.user.email, details: p, quizzes, classes, students, sessions, players, answers };
+      downloadFile(`afterclass-backup-${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
+      toast(`Saved ${quizzes.length} quizzes, ${classes.length} classes and ${sessions.length} sessions`);
+    } catch (err) { toast(err.message, true); }
+    finally { b.disabled = false; b.textContent = "Download my data"; }
   };
   $("#purge", v).onclick = async () => {
     const days = Number($("#sRetain", v).value);

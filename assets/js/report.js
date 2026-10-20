@@ -1,7 +1,7 @@
 // Results: list of games/assignments, detailed reports (marking written answers,
 // absentees, CSV, certificates, Q&A), and HOD reviews of colleagues' quizzes.
 import { sb, q, rpc } from "./sb.js";
-import { $, esc, rt, LET, TYPE_NAME, toast, ask, dialog, fmtDate, pct, csvCell, downloadFile, renderMath, qimg } from "./ui.js";
+import { $, esc, rt, LET, TYPE_NAME, toast, ask, dialog, fmtDate, pct, csvCell, downloadFile, renderMath, qimg, waButton } from "./ui.js";
 import { ctx, frame, words, statusChip } from "./shell.js";
 import { headerHTML } from "./exam.js";
 
@@ -79,7 +79,7 @@ export async function reportView(id) {
       <div class="row muted" style="font-size:14px;margin-top:6px">${kindChip(s)}${sessionStatus(s)}<span>PIN <b class="num">${s.pin}</b></span><span>${fmtDate(s.created_at)}</span>${s.settings?.timeLimitMin ? `<span>${s.settings.timeLimitMin} min limit</span>` : ""}<span>Answers shown: ${{ close: "after the deadline", submit: "on submit", never: "never" }[s.answer_reveal] || "after the deadline"}</span></div></div>
       <div class="row">
         ${s.kind === "live" && isOpen ? `<a class="btn primary" href="host.html?s=${s.id}">Open host screen</a>` : ""}
-        ${s.kind === "assignment" ? `<button class="btn" id="copyLink" type="button">Copy link</button><button class="btn" id="toggle" type="button">${isOpen ? "Close now" : "Reopen"}</button>` : ""}
+        ${s.kind === "assignment" ? `<button class="btn" id="copyLink" type="button">Copy link</button>${waButton(`${s.title} on Afterclass: open ${link} (PIN ${s.pin})${s.closes_at ? `. Closes ${fmtDate(s.closes_at)}` : ""}.`)}<button class="btn" id="toggle" type="button">${isOpen ? "Close now" : "Reopen"}</button>` : ""}
         <button class="btn" id="csv" type="button" ${players.length ? "" : "disabled"}>Download CSV</button>
         ${players.length && (web || s.settings?.collectEmail) ? `<button class="btn" id="certs" type="button">Print certificates</button>` : ""}
         <button class="btn ghost danger" id="delS" type="button">Delete</button></div></div>

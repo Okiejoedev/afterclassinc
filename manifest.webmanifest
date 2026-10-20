@@ -1,0 +1,20 @@
+{
+  "name": "Afterclass",
+  "short_name": "Afterclass",
+  "description": "Live quiz games, online tests and exam papers for Nigerian schools.",
+  "start_url": "./?source=app",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111733",
+  "theme_color": "#111733",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Join a game", "url": "./?source=app" },
+    { "name": "Teacher dashboard", "url": "teacher/" }
+  ]
+}

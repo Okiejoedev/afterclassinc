@@ -1,7 +1,7 @@
 // Teacher home: an overview of everything at a glance, with quick actions,
 // what's running now, recent quizzes, class codes for students, and results.
 import { sb, q, rpc } from "./sb.js";
-import { $, esc, toast, fmtDate } from "./ui.js";
+import { $, esc, toast, fmtDate, waButton } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
 import { sampleDialog } from "./samples.js";
 
@@ -78,7 +78,7 @@ export async function overviewView() {
           : `<div class="empty" style="padding:18px">No classes yet. <a href="#/classes">Create a class</a></div>`}</section>
         <section class="panel"><h2 class="h2">Share the join page</h2>
           <p class="muted" style="margin:0;font-size:14px">${w.Learners} go here to register, or to join a game with its PIN.</p>
-          <div class="row"><code style="overflow-wrap:anywhere">${esc(new URL("../", location.href).href)}</code><button class="btn sm" id="copySite" type="button">Copy</button></div></section>
+          <div class="row"><code style="overflow-wrap:anywhere">${esc(new URL("../", location.href).href)}</code><button class="btn sm" id="copySite" type="button">Copy</button>${waButton(`Join me on Afterclass for quizzes and tests: ${new URL("../", location.href).href}`, "WhatsApp", "btn sm")}</div></section>
       </aside>
     </div>`;
 

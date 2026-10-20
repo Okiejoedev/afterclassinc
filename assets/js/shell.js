@@ -20,13 +20,15 @@ export function words(kind = ctx.kind) {
 
 export function frame(active, inner) {
   const app = $("#app");
-  const tabs = [["home", "Home"], ["quizzes", "Quizzes"], ["classes", "Class lists"], ["sessions", "Results"], ...(ctx.reviewer ? [["reviews", "Reviews"]] : []), ["school", "School"]];
+  const tabs = [["home", "Home"], ["quizzes", "Quizzes"], ["classes", "Class lists"], ["sessions", "Results"], ...(ctx.reviewer ? [["reviews", "Reviews"]] : []), ["school", "School"], ...(ctx.isAdmin ? [["admin", "Admin"]] : [])];
   app.innerHTML = `<header class="topbar">
       <a class="brand" href="#/home">${LOGO} Afterclass</a>
       <nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<a href="#/${k}" class="${active === k ? "on" : ""}" ${active === k ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav>
       <div class="row"><span class="muted acct">${esc(ctx.head?.school?.name || "")}${ctx.head?.school ? " · " : ""}${esc(ctx.user.email)}</span><button class="btn sm" id="signOut" type="button">Sign out</button></div>
-    </header><main id="view" style="display:grid;gap:20px">${inner}</main>`;
+    </header><main id="view" style="display:grid;gap:20px">${inner}</main>
+    <footer class="app-foot"><a href="../help.html">Help &amp; guide</a><a href="#" id="fbLink">Report a problem</a><a href="../terms.html">Terms</a><a href="../privacy.html">Privacy</a></footer>`;
   $("#signOut").onclick = async () => { await sb.auth.signOut(); location.hash = ""; };
+  $("#fbLink").onclick = (e) => { e.preventDefault(); import("./feedback.js").then((m) => m.openFeedback()); };
   return $("#view");
 }
 

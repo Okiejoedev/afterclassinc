@@ -7,6 +7,11 @@ import { practise } from "./practice.js";
 
 const app = $("#app");
 let hooks = {}, user = null, profile = null;
+// "Report a problem" links on the home page, dashboards and phone screens.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("[data-fb]")) return;
+  e.preventDefault(); import("./feedback.js").then((m) => m.openFeedback());
+});
 
 export async function home(h = hooks, msg = "") {
   hooks = h;
@@ -78,7 +83,7 @@ function landing(msg) {
       <div><b>2</b><h3>Students join</h3><p class="muted">With a game PIN, or from their dashboard.</p></div>
       <div><b>3</b><h3>Everyone sees results</h3><p class="muted">Scores, corrections and reports straight away.</p></div>
     </section>
-    <footer class="home-foot"><a href="privacy.html">Privacy notice</a><span>Afterclass</span></footer>
+    <footer class="home-foot"><span class="row" style="gap:6px 16px"><a href="help.html">Help &amp; guide</a><a href="#" data-fb>Report a problem</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a></span><span>Afterclass</span></footer>
   </div>`;
   bindPin();
   app.querySelectorAll("[data-auth]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); authDialog(b.dataset.auth, b.dataset.role || "student"); }));
@@ -100,6 +105,7 @@ function authDialog(mode = "in", role = "student") {
       ${stu ? `<div class="field"><label class="label" for="aNo">Admission / matric number <span style="text-transform:none;letter-spacing:0">(optional)</span></label><input id="aNo" type="text" maxlength="40" autocomplete="off"></div>` : ""}` : ""}
     <div class="field"><label class="label" for="aEmail">Email</label><input id="aEmail" type="email" autocomplete="email" required></div>
     ${reset ? "" : `<div class="field"><label class="label" for="aPw">Password</label><input id="aPw" type="password" minlength="8" autocomplete="${up ? "new-password" : "current-password"}" required>${up ? `<small class="muted">At least 8 characters.</small>` : ""}</div>`}
+    ${up ? `<label class="check" style="border:0;padding:0;align-items:flex-start"><input type="checkbox" id="aTerms"> <span style="font-size:14px">I agree to the <a href="terms.html" target="_blank" rel="noopener">terms of use</a> and <a href="privacy.html" target="_blank" rel="noopener">privacy notice</a>${stu ? ". If I am under 13, a parent or teacher knows I am using Afterclass." : "."}</span></label>` : ""}
     <button class="btn primary big" type="submit" id="aGo">${up ? "Create account" : reset ? "Send reset link" : "Sign in"}</button>
     <div class="status" id="aStatus" role="status"></div>
     <div class="spread" style="font-size:14px">${mode === "in"
@@ -123,6 +129,7 @@ function authDialog(mode = "in", role = "student") {
         if (full_name.length < 2) throw new Error("Enter your full name.");
         const meta = { role, full_name, ...(stu ? { student_no: ($("#aNo", d)?.value || "").trim() } : {}) };
         const back = new URL(stu ? "./" : "teacher/", location.href).href;
+        if (!$("#aTerms", d).checked) throw new Error("Please accept the terms of use to continue.");
         const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: meta, emailRedirectTo: back } });
         if (error) throw error;
         if (!data.session) { st.textContent = `Almost done: we sent a link to ${email}. Open it to confirm your email, then sign in.`; return; }
@@ -172,7 +179,7 @@ async function studentDash(msg = "") {
             <div class="row"><button class="btn" type="submit">Save</button><span class="muted" style="font-size:13px">${esc(user.email)}</span></div></form></section>
       </aside>
     </div>
-    <footer class="home-foot"><a href="privacy.html">Privacy notice</a><span>Afterclass</span></footer>
+    <footer class="home-foot"><span class="row" style="gap:6px 16px"><a href="help.html">Help &amp; guide</a><a href="#" data-fb>Report a problem</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a></span><span>Afterclass</span></footer>
   </div>`;
   $("#out").onclick = signOut;
   bindPin("dashPin", profile.full_name);

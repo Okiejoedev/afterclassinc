@@ -1181,6 +1181,80 @@ begin
 end $$;
 
 -- =====================================================================
+-- RUNNING THE SITE: problem reports and the owner's stats page
+-- Make yourself an admin once (SQL Editor):
+--   insert into public.app_admins select id from auth.users where email = 'you@example.com';
+-- =====================================================================
+create table if not exists public.app_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+alter table public.app_admins enable row level security;   -- no policies: only the functions below read it
+
+create table if not exists public.feedback (
+  id         bigint generated always as identity primary key,
+  user_id    uuid default auth.uid() references auth.users(id) on delete set null,
+  message    text not null check (length(message) between 3 and 2000),
+  contact    text not null default '' check (length(contact) <= 120),
+  page       text not null default '' check (length(page) <= 200),
+  ip         text not null default '',
+  handled    boolean not null default false,
+  created_at timestamptz not null default now()
+);
+alter table public.feedback enable row level security;     -- written and read only through the functions below
+
+create or replace function public.is_app_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from app_admins where user_id = auth.uid()) $$;
+
+-- "Report a problem": anyone may send, at most 5 an hour from one connection.
+create or replace function public.send_feedback(p_message text, p_contact text default '', p_page text default '')
+returns void language plpgsql security definer set search_path = public as $$
+declare v_ip text := coalesce(public._client_ip(), '');
+begin
+  if length(trim(coalesce(p_message, ''))) < 3 then raise exception 'Please describe the problem.'; end if;
+  if (select count(*) from feedback f
+       where f.created_at > now() - interval '1 hour'
+         and ((v_ip <> '' and f.ip = v_ip) or (auth.uid() is not null and f.user_id = auth.uid()))) >= 5
+     then raise exception 'Thanks, we already have your messages. Please try again later.'; end if;
+  insert into feedback (message, contact, page, ip)
+  values (left(trim(p_message), 2000), left(trim(coalesce(p_contact, '')), 120), left(coalesce(p_page, ''), 200), v_ip);
+end $$;
+
+-- The owner's dashboard: how the site is being used, and the latest problem reports.
+create or replace function public.admin_stats() returns json
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return json_build_object(
+    'accounts', (select count(*) from auth.users),
+    'teachers', (select count(*) from auth.users u where not exists (select 1 from profiles p where p.user_id = u.id and p.role = 'student')),
+    'students', (select count(*) from profiles where role = 'student'),
+    'signups_7d', (select count(*) from auth.users where created_at > now() - interval '7 days'),
+    'quizzes', (select count(*) from quizzes),
+    'live_games', (select count(*) from sessions where kind = 'live'),
+    'assignments', (select count(*) from sessions where kind = 'assignment'),
+    'sessions_7d', (select count(*) from sessions where created_at > now() - interval '7 days'),
+    'active_teachers_7d', (select count(distinct owner_id) from sessions where created_at > now() - interval '7 days'),
+    'players', (select count(*) from players),
+    'players_7d', (select count(*) from players where joined_at > now() - interval '7 days'),
+    'classes', (select count(*) from classes),
+    'schools', (select count(*) from schools),
+    'by_day', (select coalesce(json_agg(json_build_object('day', d::date, 'signups', (select count(*) from auth.users where created_at::date = d::date),
+                    'sessions', (select count(*) from sessions where created_at::date = d::date)) order by d), '[]'::json)
+               from generate_series(current_date - 13, current_date, interval '1 day') d),
+    'feedback', (select coalesce(json_agg(json_build_object('id', f.id, 'message', f.message, 'contact', f.contact, 'page', f.page, 'handled', f.handled,
+                    'at', f.created_at, 'email', (select email from auth.users where id = f.user_id)) order by f.created_at desc), '[]'::json)
+                 from (select * from feedback order by created_at desc limit 100) f));
+end $$;
+
+create or replace function public.admin_feedback_done(p_id bigint, p_done boolean default true) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can do this.'; end if;
+  update feedback set handled = p_done where id = p_id;
+end $$;
+
+-- =====================================================================
 -- PERMISSIONS
 -- =====================================================================
 do $$
@@ -1188,7 +1262,7 @@ declare f text;
 begin
   -- student functions: anyone with a PIN / player token
   foreach f in array array[
-    'public.join_session(text, text, text, text)', 'public.session_state(uuid, uuid)',
+    'public.join_session(text, text, text, text)', 'public.session_state(uuid, uuid)', 'public.send_feedback(text, text, text)',
     'public.submit_answer(uuid, uuid, int, int, text)', 'public.submit_assignment(uuid, uuid, jsonb, jsonb)',
     'public.start_attempt(uuid, uuid)', 'public.aq_post(uuid, uuid, text)', 'public.aq_vote(uuid, uuid, bigint)',
     'public.aq_list(uuid, uuid)', 'public.ping()'] loop
@@ -1203,7 +1277,8 @@ begin
     'public.set_member(uuid, text, text)', 'public.new_join_code()', 'public.leave_school()',
     'public.submit_for_review(uuid)', 'public.review_quiz(uuid, text, text)',
     'public.join_class(text, text)', 'public.leave_class(uuid)', 'public.student_home()',
-    'public.practice_quiz(uuid)', 'public.class_leaderboard(uuid)', 'public.teacher_week()'] loop
+    'public.practice_quiz(uuid)', 'public.class_leaderboard(uuid)', 'public.teacher_week()',
+    'public.is_app_admin()', 'public.admin_stats()', 'public.admin_feedback_done(bigint, boolean)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;

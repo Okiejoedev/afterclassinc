@@ -166,3 +166,8 @@ export function confetti() {
   };
   cancelAnimationFrame(confRAF); confRAF = requestAnimationFrame(step);
 }
+
+// "Share on WhatsApp": most teachers send links to class groups this way.
+// wa.me opens the app on phones and WhatsApp Web on computers.
+export const waLink = (text) => `https://wa.me/?text=${encodeURIComponent(text)}`;
+export const waButton = (text, label = "Share on WhatsApp", cls = "btn") => `<a class="${cls} wa" href="${waLink(text)}" target="_blank" rel="noopener">${label}</a>`;

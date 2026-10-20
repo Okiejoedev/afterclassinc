@@ -510,3 +510,9 @@ body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in s
 .inst-list li span { font-size: 12px; color: var(--muted); }
 .inst-list li:hover, .inst-list li:focus { background: var(--sunk); outline: none; }
 .inst-list li.muted { cursor: default; font-size: 14px; }
+.btn.wa { background: #1F9D55; border-color: #1F9D55; color: #fff; }
+.btn.wa:hover { filter: brightness(1.06); background: #1F9D55; }
+body.stage .btn.wa { background: #1F9D55; border-color: #1F9D55; color: #fff; }
+.app-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: center; padding: 26px 0 0; margin-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
+.app-foot a { color: var(--muted); }
+.chip.warn { color: var(--warn); border-color: currentColor; }
