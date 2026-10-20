@@ -123,8 +123,9 @@ async function route() {
   const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");
   try {
-    if (page !== "home" && page !== "quizzes" && page !== "school" && page) frame(page === "new" || page === "edit" || page === "print" ? "quizzes" : page === "class" ? "classes" : page === "report" ? "sessions" : page === "review" ? "reviews" : page, `<p class="muted">Loading…</p>`);
-    if (page === "new") return await (await editor()).editorView(null, { importNow: query === "import", blank: query === "blank" });
+    if (page !== "home" && page !== "quizzes" && page !== "school" && page) frame(page === "new" || page === "edit" || page === "print" || page === "record" ? "quizzes" : page === "class" ? "classes" : page === "report" ? "sessions" : page === "review" ? "reviews" : page, `<p class="muted">Loading…</p>`);
+    if (page === "record") return (await import("./record.js")).recordView();
+    if (page === "new") return await (await editor()).editorView(null, { importNow: query === "import", blank: query === "blank", transcript: query === "transcript" });
     if (page === "edit") return await (await editor()).editorView(id);
     if (page === "print") return await (await exam()).examView(id, frame);
     if (page === "classes") return await (await classes()).classesView();
@@ -173,6 +174,7 @@ async function quizzesView() {
   const v = frame("quizzes", `<div class="page-h"><div><span class="label">Your library</span><h1>Quizzes</h1></div>
     <div class="row"><details class="menu"><summary class="btn primary big">+ New quiz ▾</summary><div class="menu-list" style="right:0;left:auto">
         <a href="#/new"><b>From your notes</b><span>Upload a PDF or Word file, or paste notes</span></a>
+        <a href="#/record"><b>Record a lesson</b><span>Teach as normal; questions from what you said</span></a>
         <a href="#/new?blank"><b>Type your own questions</b><span>Start empty and add questions one by one</span></a>
         <a href="#/new?import"><b>Import past questions</b><span>Paste questions you already have</span></a>
         <button type="button" data-sample><b>Sample quiz</b><span>Ready-made, play it right now</span></button>

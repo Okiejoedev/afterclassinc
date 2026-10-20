@@ -31,7 +31,7 @@ export async function editorView(id, opts = {}) {
     ${quiz.review_status === "changes" && quiz.review_note ? `<div class="notice"><b>Your HOD asked for changes:</b> ${esc(quiz.review_note)}</div>` : ""}
     <div class="bench${opts.blank ? " solo" : ""}" id="bench">
       <section class="panel" aria-labelledby="srcH" id="srcPanel" ${opts.blank ? "hidden" : ""}>
-        <div class="spread"><h2 id="srcH" style="font-size:22px">1 · Your material</h2><button class="btn sm" id="importBtn" type="button">Import past questions</button></div>
+        <div class="spread"><h2 id="srcH" style="font-size:22px">1 · Your material</h2><div class="row"><a class="btn sm" href="#/record">Record a lesson</a><button class="btn sm" id="importBtn" type="button">Import past questions</button></div></div>
         <label class="drop" id="drop" for="file">
           <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3-3 3 3"/></svg>
           <strong>Drop lesson notes here</strong>
@@ -70,6 +70,16 @@ export async function editorView(id, opts = {}) {
   $("#title", v).value = quiz.title;
   $("#title", v).oninput = (e) => { quiz.title = e.target.value; markDirty(); };
   const setStatus = (m, err) => { const s = $("#status", v); s.textContent = m; s.className = "status" + (err ? " err" : ""); };
+  // Text from "Record a lesson" arrives here, ready to check and turn into questions.
+  if (opts.transcript) {
+    const t = store.get("afterclass.transcript", null);
+    if (t?.text) {
+      $("#srcText", v).value = t.text; quiz.title = t.title; $("#title", v).value = quiz.title;
+      store.del("afterclass.transcript"); markDirty();
+      setStatus("This is the text of your lesson recording. Read it, correct any words that came out wrong, then press Generate questions.");
+      setTimeout(() => $("#srcText", v).scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+    }
+  }
 
   /* ----- files ----- */
   const renderChips = () => {

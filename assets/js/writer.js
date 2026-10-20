@@ -130,6 +130,8 @@ function cleanTerm(t) {
   if (!s || s.length < 3 || wc(s) > 6 || !/^[A-Za-z]/.test(s)) return null;
   if (BAD_START.has(s.split(/\s+/)[0].toLowerCase())) return null;
   if (/\b(is|are|was|were|has|have|can|will|would|should|must|do|does)\b/i.test(s)) return null;
+  // A term is a name, never a clause: "plants need water because water" is not one.
+  if (/\b(because|when|if|that|which|who|where|while|since|although|unless|until|need|needs|make|makes)\b/i.test(s)) return null;
   return s;
 }
 function cleanDef(d) {
@@ -153,7 +155,13 @@ const isAre = (t) => { const h = String(t).split(/\s+of\s+/)[0].trim().split(" "
 
 function extract(segs) {
   const facts = [];
-  const add = (f) => { f.id = facts.length; facts.push(f); };
+  // Teachers repeat themselves (especially in recorded lessons): keep each fact once.
+  const seen = new Set();
+  const add = (f) => {
+    const k = f.kind + "|" + (f.kind === "def" || f.kind === "meaning" || f.kind === "role" ? f.term : f.kind === "list" ? f.rel + f.topic : f.kind === "why" ? f.q : f.text || "").toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k); f.id = facts.length; facts.push(f);
+  };
   segs.forEach((g, gi) => {
     // Lists written as bullets.
     for (const L of g.lists) {
@@ -233,8 +241,18 @@ function parseListHead(t) {
   return null;
 }
 function sentenceList(s) {
-  const split = (rest) => trimEnd(rest).replace(/^(?:namely|such as|the following|as follows)[:,]?\s*/i, "")
-    .split(/\s*[,;]\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+/).map((x) => trimEnd(x.replace(/^(?:the|an?)\s+/i, ""))).filter(Boolean);
+  const split = (rest) => {
+    const items = trimEnd(rest).replace(/^(?:namely|such as|the following|as follows)[:,]?\s*/i, "")
+      .split(/\s*[,;]\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+/).map((x) => trimEnd(x.replace(/^(?:the|an?)\s+/i, ""))).filter(Boolean);
+    // Speech has no commas: "igneous rocks sedimentary rocks and metamorphic rocks" -> split on the repeated noun.
+    const head = items.length ? items[items.length - 1].split(" ").pop().toLowerCase() : "";
+    return head.length > 2 ? items.flatMap((x) => {
+      const w = x.split(" "), out = []; let cur = [];
+      for (const t of w) { cur.push(t); if (t.toLowerCase() === head && cur.length > 1) { out.push(cur.join(" ")); cur = []; } }
+      if (cur.length) out.length && cur.length < 2 ? (out[out.length - 1] += " " + cur.join(" ")) : out.push(cur.join(" "));
+      return out.length > 1 ? out : [x];
+    }) : items;
+  };
   const ok = (items) => items.length >= 2 && items.length <= 10 && items.every((x) => wc(x) >= 1 && wc(x) <= 5 && !/\b(is|are|was|were)\b/i.test(x));
   let m = s.match(new RegExp(`^(?:the\\s+)?(?:(?:main|major|basic|different|various|important|key|${Object.keys(NUMWORD).join("|")}|\\d+)\\s+)*(${REL_RE})\\s+(of|for|affecting|influencing)\\s+((?:an?\\s+|the\\s+)?.{2,60}?)\\s+(?:are|include|includes|is|consist of|comprise)\\s*:?\\s*(.+)$`, "i"));
   if (m) { const items = split(m[4]); if (ok(items)) return { rel: m[1].toLowerCase(), conn: m[2].toLowerCase(), topic: trimEnd(m[3]), items }; }
@@ -513,6 +531,7 @@ function candidates(facts, opts) {
 // Two definitions are related when they open the same way ("the movement of…"),
 // share key words, or name the same kind of thing (eukaryotic / prokaryotic cells).
 function related(a, b) {
+  if (a.term.toLowerCase() === b.term.toLowerCase() || a.def === b.def) return false;
   if (Math.abs(a.seg - b.seg) > 1) return false;
   const da = words(a.def), db = words(b.def);
   if (da.slice(0, 3).join(" ") === db.slice(0, 3).join(" ")) return true;

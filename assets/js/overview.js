@@ -45,6 +45,7 @@ export async function overviewView() {
     </div>
     <div class="quick">
       <a class="go" href="#/new"><b>+ Quiz from your notes</b><span>Upload a PDF, Word file or paste notes</span></a>
+      <a href="#/record"><b>Record a lesson</b><span>Teach as normal; get questions after</span></a>
       <a href="#/new?blank"><b>Type your own questions</b><span>Build a quiz question by question</span></a>
       <a href="#/quizzes"><b>▶ Play a live game</b><span>Pick a quiz and press Play live</span></a>
       <a href="#" data-sample><b>Try a sample quiz</b><span>Ready-made, play it in a minute</span></a>
