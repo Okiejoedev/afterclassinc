@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
     return reply({ error: "This account is not allowed to use AI question writing." }, 403);
   }
 
-  let body: { text?: string; pdfs?: string[]; count?: number; types?: string[]; level?: string; difficulty?: string; language?: string };
+  let body: { mode?: string; text?: string; pdfs?: string[]; count?: number; types?: string[]; level?: string; difficulty?: string; language?: string };
   try { body = await req.json(); } catch { return reply({ error: "Send JSON." }, 400); }
   const text = String(body.text ?? "").trim();
   const pdfs = (Array.isArray(body.pdfs) ? body.pdfs : []).filter((p) => typeof p === "string" && p.length > 100).slice(0, 5);
@@ -101,7 +101,9 @@ Deno.serve(async (req) => {
   const difficulty = DIFFICULTY[body.difficulty ?? ""] ?? DIFFICULTY.mixed;
   const language = LANGS.includes(body.language ?? "") ? body.language! : "English";
   if (!text && !pdfs.length) return reply({ error: "No lesson notes were sent." }, 400);
-  if (!types.length) return reply({ error: "Choose at least one question type." }, 400);
+  // "check": find factual errors and mis-heard words; "expand": turn short notes into full notes.
+  const mode = body.mode === "check" || body.mode === "expand" ? body.mode : "generate";
+  if (mode === "generate" && !types.length) return reply({ error: "Choose at least one question type." }, 400);
 
   const instructions = `You are helping a teacher write questions for their class from their own lesson notes.
 Use ONLY the teaching material provided${pdfs.length ? " (the attached PDF" + (pdfs.length > 1 ? "s" : "") + (text ? " and the text below" : "") + ")" : " below"}. Every question must be answerable from it; do not add outside facts.
@@ -126,19 +128,39 @@ For maths, write LaTeX between single dollar signs, e.g. $x^2 + 3x$ or $\\frac{1
 "source" says where in the notes the answer is: the page number from the [Page N] markers (e.g. "p. 4"), or the file name shown in "=== name ===" lines plus page, or a short section name. Keep it under 30 characters.
 The title names the topic in a few words.`;
 
+  const checkInstructions = `You are checking a teacher's lesson notes before they become questions for students. The notes may be a transcript of the teacher speaking, so expect missing punctuation and words the speech recogniser mis-heard.
+List every statement that is factually wrong (dates, years, numbers, names, places, definitions, formulas, scientific or historical facts) and every passage that is clearly mis-heard or garbled (for example a misremembered pledge, anthem, poem or definition).
+For each one give:
+- "quote": the exact words copied from the notes, as short as possible but long enough to find (copy them character for character);
+- "problem": what is wrong, in one plain sentence a teacher will understand;
+- "correction": the correct fact, with its date or source where useful;
+- "replacement": text that can replace the quote word for word in the notes.
+Judge facts as they stand today for Nigeria (for example, the national anthem changed back to "Nigeria, We Hail Thee" in May 2024). Do not report style, grammar or opinions, and do not report things that are merely incomplete. If nothing is wrong, return an empty list.`;
+  const expandInstructions = `A teacher's lesson notes below are too short to make a good set of questions from. Expand them into complete, accurate lesson notes on the same topic(s) for ${level}, in ${language}${language === "English" ? " (British spelling, as used in Nigerian schools)" : ""}, following the Nigerian curriculum.
+- Keep every correct point the teacher made, correct anything that is wrong, and drop filler and chatter.
+- Add what a good lesson on this topic covers: clear definitions ("X is …"), lists ("The types of X are:" followed by "- " bullet lines), causes and reasons ("… because …"), examples from Nigerian life, and important dates or figures only when you are certain of them.
+- Use short headings in capital letters and plain sentences. No markdown symbols other than "- " bullets.
+- About 300 to 600 words. Do not invent statistics, quotations or people.
+"title" names the topic in a few words; "notes" is the full expanded text; "additions" lists, in a few words each, the main points you added or corrected.`;
+  const checkSchema = { type: "object", additionalProperties: false, required: ["issues"], properties: { issues: { type: "array", items: { type: "object", additionalProperties: false, required: ["quote", "problem", "correction", "replacement"], properties: { quote: { type: "string" }, problem: { type: "string" }, correction: { type: "string" }, replacement: { type: "string" } } } } } };
+  const expandSchema = { type: "object", additionalProperties: false, required: ["title", "notes", "additions"], properties: { title: { type: "string" }, notes: { type: "string" }, additions: { type: "array", items: { type: "string" } } } };
+  const job = mode === "check" ? { prompt: checkInstructions, schema: checkSchema, effort: "medium", max: 8000 }
+    : mode === "expand" ? { prompt: expandInstructions, schema: expandSchema, effort: "medium", max: 8000 }
+    : { prompt: instructions, schema, effort: count > 30 ? "low" : "medium", max: 32000 };
+
   const content: Anthropic.Beta.BetaContentBlockParam[] = [];
   for (const data of pdfs) content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data } });
-  content.push({ type: "text", text: text ? `${instructions}\n\nTEACHING MATERIAL:\n"""\n${text}\n"""` : instructions });
+  content.push({ type: "text", text: text ? `${job.prompt}\n\n${mode === "generate" ? "TEACHING MATERIAL" : "THE TEACHER'S NOTES"}:\n"""\n${text}\n"""` : job.prompt });
 
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY
   try {
     // Streaming keeps long exam-sized requests (up to 60 questions) from timing out.
     const response = await client.beta.messages.stream({
       model: "claude-opus-5-5",
-      max_tokens: 32000,
+      max_tokens: job.max,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { effort: count > 30 ? "low" : "medium", format: { type: "json_schema", schema } },
+      output_config: { effort: job.effort, format: { type: "json_schema", schema: job.schema } },
       messages: [{ role: "user", content }],
     } as Anthropic.Beta.MessageCreateParamsStreaming).finalMessage();
 
@@ -151,6 +173,7 @@ The title names the topic in a few words.`;
     const out = response.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text).join("");
+    if (mode !== "generate") return reply(JSON.parse(out));
     // Safety net against repeats: keep the first question per concept and per wording.
     const parsed = JSON.parse(out) as { title: string; questions: { concept?: string; question: string }[] };
     const seen = new Set<string>();

@@ -34,6 +34,26 @@ export async function aiGenerate({ text, pdfs = [], count, types, level, difficu
   return { title: String(data?.title || "").slice(0, 90), questions: qs };
 }
 
+// The same AI function also checks facts and expands short notes (mode "check" / "expand").
+async function callAI(body) {
+  if (body.text.length > MAX_CHARS) throw new Error("These notes are too long to check in one go. Check a section at a time.");
+  const { data, error } = await sb.functions.invoke("generate-quiz", { body });
+  if (error) {
+    let msg = "The AI writer is not reachable. Check README step 7.";
+    try { const b = await error.context?.json?.(); if (b?.error) msg = b.error; } catch {}
+    throw new Error(msg);
+  }
+  return data;
+}
+// -> [{ quote, problem, correction, replacement }]
+export async function aiCheck(text, level) {
+  return (await callAI({ mode: "check", text, level }))?.issues || [];
+}
+// -> { title, notes, additions[] }
+export async function aiExpand(text, { level, language }) {
+  return await callAI({ mode: "expand", text, level, language });
+}
+
 // Accepts the AI's shape, imported questions and the app's own shape.
 export function normalize(list) {
   const out = [];

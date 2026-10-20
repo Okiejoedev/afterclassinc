@@ -5,7 +5,9 @@ import { AI_ENABLED } from "./config.js";
 import { $, esc, rt, LET, TYPE_NAME, uid, shuffle, toast, ask, dialog, qimg, renderMath, symbolBarHTML, store } from "./ui.js";
 import { ctx, frame, statusChip } from "./shell.js";
 import { readFiles, readFile } from "./extract.js";
-import { aiGenerate, basicGenerate, normalize, LEVELS, DIFFICULTY, LANGUAGES } from "./generate.js";
+import { aiGenerate, aiCheck, aiExpand, basicGenerate, normalize, LEVELS, DIFFICULTY, LANGUAGES } from "./generate.js";
+import { checkFacts } from "./factcheck.js";
+import { TOPICS, suggestTopics } from "./topics.js";
 import { parseQuestions } from "./import.js";
 import { shrinkImage } from "./school.js";
 
@@ -40,7 +42,10 @@ export async function editorView(id, opts = {}) {
         </label>
         <div class="filechips" id="fileChips" hidden></div>
         <div class="field"><label class="label" for="srcText">Text from your files (trim it, or paste notes here)</label>
-          <textarea id="srcText" rows="8" placeholder="The text from your files appears here. You can also paste notes directly."></textarea></div>
+          <textarea id="srcText" rows="8" placeholder="The text from your files appears here. You can also paste notes directly."></textarea>
+          <div class="row"><button class="btn sm" id="checkBtn" type="button">Check facts</button><button class="btn sm" id="expandBtn" type="button">Expand my notes</button></div></div>
+        <div class="notes-box" id="factBox" hidden></div>
+        <div class="notes-box" id="expandBox" hidden></div>
         <div class="opts">
           <div class="field"><label class="label" for="count">Questions</label><select id="count">${[5, 10, 15, 20, 30, 40, 50, 60].map((n) => `<option ${n === 10 ? "selected" : ""}>${n}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="level">Level</label><select id="level">${LEVELS.map(([k, l]) => `<option value="${k}" ${k === defLevel ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -107,6 +112,88 @@ export async function editorView(id, opts = {}) {
   drop.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
   $("#fileChips", v).onclick = (e) => { const b = e.target.closest("[data-rm]"); if (b) { files.splice(+b.dataset.rm, 1); loadFiles(); } };
 
+  /* ----- check facts / expand short notes ----- */
+  // Fixes find their text again by its original words, so fixing one doesn't break the others.
+  const srcBox = $("#srcText", v);
+  let checkedText = null, issues = [];
+  const applyIssue = (it) => {
+    const t = srcBox.value, at = t.indexOf(it.orig, Math.max(0, it.at - 80)), i = at >= 0 ? at : t.indexOf(it.orig);
+    if (i < 0) return false;
+    srcBox.value = t.slice(0, i) + it.replacement + t.slice(i + it.orig.length);
+    it.done = true; return true;
+  };
+  function showFacts(note = "", thenGenerate = false) {
+    const box = $("#factBox", v), open = issues.filter((x) => !x.done && !x.ignored);
+    box.hidden = false;
+    box.innerHTML = `<div class="spread"><b>${open.length ? `Check ${open.length === 1 ? "this fact" : `these ${open.length} facts`}` : "Fact check"}</b><button class="btn ghost sm" data-close type="button">Close</button></div>
+      ${open.length ? `<ul class="todo">${open.map((x) => `<li data-i="${issues.indexOf(x)}"><div><div class="muted" style="font-size:13px">You wrote: “${esc(x.said)}”</div><div><b>Correct:</b> ${esc(x.correct)}${x.ai ? ` <span class="chip">AI</span>` : ""}</div></div>
+          <div class="row" style="flex-wrap:nowrap">${x.replacement != null ? `<button class="btn sm primary" data-fix type="button">Fix</button>` : ""}<button class="btn sm ghost" data-ignore type="button">Ignore</button></div></li>`).join("")}</ul>`
+        : `<p class="muted" style="margin:0;font-size:14px">No mistakes found${AI_ENABLED ? "." : " in the facts the free check knows (Nigerian dates and numbers, the pledge, anthem, flag and motto). Turn on the AI writer to check every subject."}</p>`}
+      ${note ? `<p class="muted" style="margin:0;font-size:13px">${esc(note)}</p>` : ""}
+      <div class="row">${open.some((x) => x.replacement != null) ? `<button class="btn sm primary" data-fixall type="button">Fix all</button>` : ""}${thenGenerate ? `<button class="btn sm" data-gen type="button">${open.length ? "Generate anyway" : "Generate questions"}</button>` : ""}</div>`;
+    box.onclick = (e) => {
+      const li = e.target.closest("[data-i]"), it = li && issues[+li.dataset.i];
+      if (e.target.closest("[data-close]")) { box.hidden = true; return; }
+      if (e.target.closest("[data-fix]") && it) { applyIssue(it) || toast("That text has changed; fix it by hand.", true); checkedText = srcBox.value; showFacts(note, thenGenerate); }
+      if (e.target.closest("[data-ignore]") && it) { it.ignored = true; showFacts(note, thenGenerate); }
+      if (e.target.closest("[data-fixall]")) { issues.filter((x) => !x.done && !x.ignored && x.replacement != null).forEach(applyIssue); checkedText = srcBox.value; toast("Fixed"); showFacts(note, thenGenerate); }
+      if (e.target.closest("[data-gen]")) { box.hidden = true; checkedText = srcBox.value; $("#gen", v).click(); }
+    };
+  }
+  async function runCheck({ withAI = AI_ENABLED, thenGenerate = false } = {}) {
+    const text = srcBox.value;
+    issues = checkFacts(text).map((f) => ({ said: f.said, correct: f.correct, orig: f.fix ? text.slice(f.fix.start, f.fix.end) : null, at: f.fix?.start ?? 0, replacement: f.fix ? f.fix.text : null }));
+    checkedText = text;
+    let note = "";
+    if (withAI && text.trim()) {
+      showFacts("The AI is checking every subject too…", thenGenerate);
+      try {
+        for (const i of await aiCheck(text, $("#level", v).value)) {
+          const at = text.indexOf(i.quote);
+          if (issues.some((x) => x.orig && at >= 0 && Math.abs(x.at - at) < 40)) continue;   // the free check already has it
+          issues.push({ said: i.quote, correct: `${i.problem} ${i.correction}`.trim(), orig: at >= 0 && i.replacement ? i.quote : null, at, replacement: at >= 0 && i.replacement ? i.replacement : null, ai: true });
+        }
+      } catch (e) { note = "The AI check isn't available right now (" + e.message + ")."; }
+    }
+    showFacts(note, thenGenerate);
+    return issues.filter((x) => !x.ignored).length;
+  }
+  $("#checkBtn", v).onclick = () => runCheck();
+
+  function showExpand(message = "") {
+    const box = $("#expandBox", v), text = srcBox.value;
+    const words = (text.match(/\S+/g) || []).length;
+    const sug = suggestTopics(text), rest = TOPICS.filter((t) => !sug.includes(t));
+    box.hidden = false;
+    box.innerHTML = `<div class="spread"><b>Expand my notes</b><button class="btn ghost sm" data-close type="button">Close</button></div>
+      <p style="margin:0">${esc(message || `Your notes have ${words} words. Questions come out better from fuller notes: add a checked topic note below${AI_ENABLED ? ", or let the AI expand what you wrote" : ""}.`)}</p>
+      ${AI_ENABLED ? `<div class="row"><button class="btn sm primary" data-ai type="button">Expand with AI</button><span class="muted" style="font-size:13px">Keeps your points, corrects mistakes, adds definitions, lists and examples.</span></div>` : ""}
+      ${sug.length ? `<div><span class="label">Matches your notes</span><div class="row" style="margin-top:6px">${sug.map((t) => `<button class="btn sm" data-topic="${t.id}" type="button">+ ${esc(t.title)}</button>`).join("")}</div></div>` : ""}
+      <div class="field"><label class="label" for="topicPick">All topic notes</label><select id="topicPick"><option value="">Choose a topic to add…</option>${(sug.length ? rest : TOPICS).map((t) => `<option value="${t.id}">${esc(t.subject)}: ${esc(t.title)}</option>`).join("")}</select></div>
+      <p class="muted" style="margin:0;font-size:13px">Topic notes are short, checked notes for common Nigerian school topics. You can also <a href="#/record">record a lesson</a> or paste more of your own notes.</p>`;
+    const add = (id) => {
+      const t = TOPICS.find((x) => x.id === id); if (!t) return;
+      srcBox.value = (srcBox.value.trim() ? srcBox.value.trim() + "\n\n" : "") + t.text;
+      toast(`Added notes on ${t.title}`); showExpand("Added. Add more, or press Generate questions.");
+    };
+    box.onclick = async (e) => {
+      if (e.target.closest("[data-close]")) { box.hidden = true; return; }
+      const tb = e.target.closest("[data-topic]"); if (tb) add(tb.dataset.topic);
+      const ab = e.target.closest("[data-ai]");
+      if (ab) {
+        ab.disabled = true; ab.textContent = "Expanding…";
+        try {
+          const r = await aiExpand(srcBox.value, { level: $("#level", v).value, language: $("#language", v).value });
+          srcBox.value = r.notes;
+          if (quiz.title === "Untitled quiz" && r.title) { quiz.title = r.title; $("#title", v).value = r.title; }
+          showExpand(`Expanded. ${r.additions?.length ? "Added or corrected: " + r.additions.join("; ") + ". " : ""}Read it through, then press Generate questions.`);
+        } catch (err) { toast(err.message, true); ab.disabled = false; ab.textContent = "Expand with AI"; }
+      }
+    };
+    $("#topicPick", box).onchange = (e) => add(e.target.value);
+  }
+  $("#expandBtn", v).onclick = () => showExpand();
+
   /* ----- generation ----- */
   $("#gen", v).onclick = async () => {
     const text = $("#srcText", v).value.trim();
@@ -114,6 +201,14 @@ export async function editorView(id, opts = {}) {
     const count = +$("#count", v).value, engine = $("#engine", v).value;
     if (!types.length) return setStatus("Tick at least one question type.", true);
     if (!text && !(engine === "ai" && source.pdfs?.length)) return setStatus("Upload a file or paste your notes first.", true);
+    // Correct the facts first (free check; instant). Only asks once per version of the text.
+    if (text && checkedText !== srcBox.value && await runCheck({ withAI: false, thenGenerate: true })) {
+      return setStatus("Some facts in your notes look wrong. Fix them (or ignore them), then generate.", true);
+    }
+    if (engine === "basic" && (text.match(/\S+/g) || []).length < 60) {
+      showExpand(`Your notes are short (${(text.match(/\S+/g) || []).length} words). Add a checked topic note${AI_ENABLED ? " or expand them with AI" : ""}, then generate.`);
+      return setStatus("Add a little more to your notes first.", true);
+    }
     $("#gen", v).disabled = true;
     try {
       let result;
@@ -121,10 +216,13 @@ export async function editorView(id, opts = {}) {
         setStatus(`The AI is reading your notes and writing ${count} questions. This usually takes 20–90 seconds…`);
         result = await aiGenerate({ text, pdfs: source.pdfs || [], count, types, level: $("#level", v).value, difficulty: $("#difficulty", v).value, language: $("#language", v).value });
       } else {
-        if (text.split(/\s+/).length < 60) throw new Error("The built-in writer needs at least a couple of paragraphs of text.");
         result = { title: "", questions: basicGenerate(text, count, types, { difficulty: $("#difficulty", v).value, level: $("#level", v).value }) };
       }
-      if (!result.questions.length) throw new Error("No questions could be made from this text. Try adding more notes.");
+      if (!result.questions.length) {
+        showExpand("No questions could be made: your notes don't yet contain clear definitions, lists or facts. Add a checked topic note" + (AI_ENABLED ? " or expand them with AI" : "") + ", then generate again.");
+        throw new Error("Expand your notes first (see the suggestions above).");
+      }
+      if (engine === "basic" && result.questions.length < Math.max(3, count / 2)) showExpand(`Only ${result.questions.length} questions could be made from these notes. Add a topic note${AI_ENABLED ? " or expand with AI" : ""} for more.`);
       const append = $("#append", v).checked && quiz.questions.length;
       quiz.questions = append ? quiz.questions.concat(result.questions) : result.questions;
       if (result.title && (quiz.title === "Untitled quiz" || !id)) { quiz.title = result.title; $("#title", v).value = quiz.title; }

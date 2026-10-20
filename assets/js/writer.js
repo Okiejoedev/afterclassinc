@@ -151,7 +151,19 @@ function articleOf(s, term) {
 }
 const named = (f) => (f.art || "") + lc(f.term);           // "the cell", "a variable", "diffusion"
 // "separation of powers" is singular, "arms of government" plural: look at the word before "of".
-const isAre = (t) => { const h = String(t).split(/\s+of\s+/)[0].trim().split(" ").pop(); return /s$/.test(h) && !/(ss|us|is)$/.test(h) ? "are" : "is"; };
+// Singular words that end in "s" (gas, bus, lens, physics…).
+const SINGULAR_S = new Set("gas bus lens atlas canvas bias chaos physics mathematics economics politics news series species glass class grass mass process".split(" "));
+const isAre = (t) => { const h = String(t).split(/\s+of\s+/)[0].trim().split(" ").pop().toLowerCase(); return /s$/.test(h) && !/(ss|us|is)$/.test(h) && !SINGULAR_S.has(h) ? "are" : "is"; };
+
+// Does a bullet's description start with a verb ("controls…", "make proteins", "represents…")?
+const BASE_VERBS = new Set("make produce release carry control store absorb help remove protect transport digest pump filter support connect receive send give take hold keep allow prevent break build cause change convert supply provide represent show stand mean teach".split(" "));
+function doesSomething(desc) {
+  const w = String(desc).trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, "");
+  if (!w || /ing$/.test(w)) return false;                       // "being faithful", "bringing children" = a meaning
+  if (/^(?:the\s+)?[a-z]+(?:\s[a-z]+)?\s+(?:is|are)\s+[a-z]+ed\b/i.test(desc)) return true;   // "food is chewed…" happens there
+  if (BASE_VERBS.has(w)) return true;
+  return /[^su]s$/.test(w) && !/(ness|ous|ics|ss|us|is)$/.test(w) && BASE_VERBS.has(w.replace(/(?:es|s)$/, "")) || /^(?:controls|stores|releases|carries|produces|absorbs|makes|helps|removes|protects|transports|digests|pumps|filters|supports|connects|receives|sends|gives|takes|holds|keeps|allows|prevents|breaks|builds|causes|changes|converts|supplies|provides|represents|shows|stands|means|teaches|completes|churns|secretes|chews)$/.test(w);
+}
 
 function extract(segs) {
   const facts = [];
@@ -174,7 +186,11 @@ function extract(segs) {
       // "Nucleus – controls the activities of the cell": a fact about each item.
       for (const it of L.items) if (it.detail && wc(it.detail) >= 2) {
         const term = cleanTerm(it.name);
-        if (term) add({ kind: "role", term, desc: it.detail, siblings: items, topic: hdr?.topic || "", rel: hdr?.rel || "", seg: gi, src: L.src, text: `${term}: ${it.detail}` });
+        if (!term) continue;
+        // "Nucleus – controls the cell" says what it does (a function); "Loyalty – being faithful
+        // to the country" or "Melting – the change from solid to liquid" says what it is (a meaning).
+        if (doesSomething(it.detail)) add({ kind: "role", term, desc: it.detail, siblings: items, topic: hdr?.topic || "", rel: hdr?.rel || "", seg: gi, src: L.src, text: `${term}: ${it.detail}` });
+        else if (cleanDef(it.detail)) add({ kind: "def", term, def: it.detail.replace(/^(?:is|are)\s+/i, ""), art: "", seg: gi, src: L.src, text: `${term}: ${it.detail}` });
       }
     }
     for (const { s: whole, src } of g.sentences) for (const s of clauses(whole)) {
@@ -227,7 +243,13 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // everything else is lower-cased when it moves away from the start of a sentence.
 let proper = new Set();
 const isProper = (w) => proper.has(w) || /^[A-Z]{2,}$/.test(w);
-function lcfirstIfCommon(s) { const w = String(s).split(" ")[0]; return isProper(w) ? s : w.toLowerCase() + s.slice(w.length); }
+// Names of more than one word written in capitals mid-sentence ("the National Pledge").
+let properPhrases = new Set();
+function lcfirstIfCommon(s) {
+  const str = String(s), w = str.split(" ")[0];
+  if (isProper(w) || [...properPhrases].some((p) => str.startsWith(p))) return str;
+  return w.toLowerCase() + str.slice(w.length);
+}
 const commonWords = { has: (w) => !proper.has(ucfirst(w)) };
 
 // "Types of X", "The main functions of the heart are:", "Reasons for the adoption of federalism".
@@ -235,9 +257,11 @@ function parseListHead(t) {
   if (!t) return null;
   const s = trimEnd(t).replace(/:$/, "");
   let m = s.match(new RegExp(`\\b(?:the\\s+)?(?:(?:main|major|basic|different|various|important|key|${Object.keys(NUMWORD).join("|")}|\\d+)\\s+)*(${REL_RE})\\s+(of|for|affecting|influencing)\\s+((?:an?\\s+|the\\s+)?.{2,60}?)(?:\\s+(?:are|include|includes|is|are as follows|consist of))?$`, "i"));
-  if (m) return { rel: m[1].toLowerCase(), conn: m[2].toLowerCase(), topic: trimEnd(m[3]) };
+  // "…of Nigeria are:" -> topic "Nigeria"
+  const bare = (x) => trimEnd(x).replace(/\s+(?:are|is|include|includes|are as follows|consist of|comprise)$/i, "");
+  if (m) return { rel: m[1].toLowerCase(), conn: m[2].toLowerCase(), topic: bare(m[3]) };
   m = s.match(/^(?:the\s+)?(?:main\s+|major\s+)?(.{2,40}?)\s+(?:of|in)\s+(?:an?\s+|the\s+)?(.{2,40})$/i);
-  if (m && /s$/.test(m[1]) && wc(m[1]) <= 2 && !BAD_START.has(m[1].split(" ")[0].toLowerCase())) return { rel: m[1].toLowerCase(), topic: trimEnd(m[2]) };
+  if (m && /s$/.test(m[1]) && wc(m[1]) <= 2 && !BAD_START.has(m[1].split(" ")[0].toLowerCase())) return { rel: m[1].toLowerCase(), topic: bare(m[2]) };
   return null;
 }
 function sentenceList(s) {
@@ -294,7 +318,7 @@ function thirdPerson(phrase) {
   const w = /[^aeiou]y$/.test(v) ? v.slice(0, -1) + "ies" : /(s|sh|ch|x|z|o)$/.test(v) ? v + "es" : v + "s";
   return [w, ...rest].join(" ");
 }
-const singular = (rel) => REL[rel] ?? (rel.endsWith("ies") ? rel.slice(0, -3) + "y" : rel.endsWith("s") ? rel.slice(0, -1) : rel);
+const singular = (rel) => rel in REL ? REL[rel] : (rel.endsWith("ies") ? rel.slice(0, -3) + "y" : rel.endsWith("s") ? rel.slice(0, -1) : rel);
 const article = (w) => (/^[aeiou]/i.test(w) ? "an " : "a ");
 
 /* ---------------- 3. write candidate questions ---------------- */
@@ -403,9 +427,13 @@ function candidates(facts, opts) {
         const right = `${f.term} — ${f.desc}`, os = shuffle([right, ...wrong]);
         push(f, { key: f.term, form: "match", type: "mcq", question: pick(["Which of the following pairs is correctly matched?", `Which of the following correctly matches ${kind ? "the " + kind : "each item"} to its ${/^(?:organ|part|organelle|component|structure)$/.test(kind) ? "function" : "description"}?`]), options: os, answer: os.indexOf(right), explanation: group.map((r) => `${r.term}: ${r.desc}`).join("; ") + ".", score: 6 });
       }
-      push(f, { key: f.term, form: "state-role", type: "short", marks: 2, question: young ? `What does the ${f.term.toLowerCase()} do?` : pick([`State the function of the ${f.term.toLowerCase()}${where}.`, `What is the role of the ${f.term.toLowerCase()}${where}?`]), answer: `${f.term}: ${f.desc}.`, keyPoints: keyPoints(f.desc), score: 5 });
+      // Symbols "represent" things; organs and agents have functions.
+      const symbolic = /^(?:represents?|stands? for|means?|shows?)\b/i.test(f.desc), T2 = lc(f.term);
+      const plural = isAre(f.term) === "are", agree = (d) => (plural ? d : thirdPerson(d));
+      push(f, { key: f.term, form: "state-role", type: "short", marks: 2, question: symbolic ? `What ${plural ? "do" : "does"} the ${T2} ${where ? where.replace(/^ (?:in|of) /, "on the ").replace(/^on the the /, "on the ") + " " : ""}represent?`.replace(/\s+\?/, "?").replace(/ on the (.+?) represent\?$/, " represent on the $1?")
+        : young ? `What ${plural ? "do" : "does"} the ${T2} do?` : pick([`State the function of the ${T2}${where}.`, `What is the role of the ${T2}${where}?`]), answer: `${f.term}: ${f.desc}.`, keyPoints: keyPoints(f.desc), score: 5 });
       const o2 = roles.filter((r) => r !== f && r.seg === f.seg);
-      if (o2.length) { const r = pick(o2); push(f, { key: f.term, form: "tf", type: "tf", question: `The ${f.term.toLowerCase()} ${verbish ? r.desc : "is " + r.desc}.`, options: ["True", "False"], answer: 1, explanation: `That is the ${r.term.toLowerCase()}. The ${f.term.toLowerCase()} ${verbish ? f.desc : "is " + f.desc}.`, score: 4 }); }
+      if (o2.length) { const r = pick(o2); push(f, { key: f.term, form: "tf", type: "tf", question: `The ${T2} ${verbish ? agree(r.desc) : "is " + r.desc}.`, options: ["True", "False"], answer: 1, explanation: `That is the ${lc(r.term)}. The ${T2} ${verbish ? agree(f.desc) : "is " + f.desc}.`, score: 4 }); }
     }
     if (f.kind === "list" && f.items.length >= 2) {
       const C = f.conn || "of", R = f.rel, one = singular(R), topic = lcAll(f.topic.replace(/^(The|An?)\s/, (x) => x.toLowerCase())), Q = f.qual ? " " + f.qual : "";
@@ -627,6 +655,12 @@ export function writeQuestions(text, opts) {
   for (const m of prose.matchAll(/\b([A-Z][a-z]+)[ \t]+([A-Z][a-z]+)\b/g)) if (!/^(The|A|An|In|On|At|For|And|But|Of|It|This|These)$/.test(m[1])) { proper.add(m[1]); proper.add(m[2]); }
   // A word the notes also write in lower case is not a name ("Federalism" heading, "federalism" in text).
   for (const w of String(text).match(/\b[a-z][a-z-]+\b/g) || []) proper.delete(ucfirst(w));
+  properPhrases = new Set();
+  for (const m of prose.matchAll(/(?<=[a-z,;][ \t]+)([A-Z][a-z]+(?:[ \t]+(?:of[ \t]+)?[A-Z][a-z]+)+)/g)) properPhrases.add(m[1].replace(/[ \t]+/g, " "));
+  // Subject names written in capitals every time ("Social Studies", "Basic Science") stay capitalised.
+  const caps = {};
+  for (const m of String(text).matchAll(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/g)) caps[m[1]] = (caps[m[1]] || 0) + 1;
+  for (const [p, n] of Object.entries(caps)) if (n >= 2 && !/^(?:The|A|An|In|On|It|This)\b/.test(p) && !String(text).includes(p.toLowerCase())) properPhrases.add(p);
   const segs = parse(stripPageFurniture(String(text)));
   const facts = extract(segs);
   const cands = candidates(facts, o).filter((c) => o.types.includes(c.type));
