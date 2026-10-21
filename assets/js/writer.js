@@ -248,6 +248,8 @@ let properPhrases = new Set();
 function lcfirstIfCommon(s) {
   const str = String(s), w = str.split(" ")[0];
   if (isProper(w) || [...properPhrases].some((p) => str.startsWith(p))) return str;
+  // "Social Studies" (not a name in these notes) -> "social studies", never "social Studies".
+  if (/^[A-Z][a-z]+(?: [A-Z][a-z]+)+/.test(str)) return str.replace(/^([A-Z][a-z]+(?: [A-Z][a-z]+)+)/, (m) => m.split(" ").map((x) => (isProper(x) ? x : x.toLowerCase())).join(" "));
   return w.toLowerCase() + str.slice(w.length);
 }
 const commonWords = { has: (w) => !proper.has(ucfirst(w)) };
@@ -429,7 +431,9 @@ function candidates(facts, opts) {
       }
       // Symbols "represent" things; organs and agents have functions.
       const symbolic = /^(?:represents?|stands? for|means?|shows?)\b/i.test(f.desc), T2 = lc(f.term);
-      const plural = isAre(f.term) === "are", agree = (d) => (plural ? d : thirdPerson(d));
+      // "The school teaches…" but "The religious bodies teach…"
+      const toBase = (d) => { const [v0, ...r] = d.split(" "); return /[^s]s$/.test(v0) && !/^(?:is|has|was)$/.test(v0) ? [base(v0), ...r].join(" ") : d; };
+      const plural = isAre(f.term) === "are", agree = (d) => (plural ? toBase(d) : thirdPerson(d));
       push(f, { key: f.term, form: "state-role", type: "short", marks: 2, question: symbolic ? `What ${plural ? "do" : "does"} the ${T2} ${where ? where.replace(/^ (?:in|of) /, "on the ").replace(/^on the the /, "on the ") + " " : ""}represent?`.replace(/\s+\?/, "?").replace(/ on the (.+?) represent\?$/, " represent on the $1?")
         : young ? `What ${plural ? "do" : "does"} the ${T2} do?` : pick([`State the function of the ${T2}${where}.`, `What is the role of the ${T2}${where}?`]), answer: `${f.term}: ${f.desc}.`, keyPoints: keyPoints(f.desc), score: 5 });
       const o2 = roles.filter((r) => r !== f && r.seg === f.seg);

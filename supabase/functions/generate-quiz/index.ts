@@ -137,8 +137,9 @@ For each one give:
 - "replacement": text that can replace the quote word for word in the notes.
 Judge facts as they stand today for Nigeria (for example, the national anthem changed back to "Nigeria, We Hail Thee" in May 2024). Do not report style, grammar or opinions, and do not report things that are merely incomplete. If nothing is wrong, return an empty list.`;
   const expandInstructions = `A teacher's lesson notes below are too short to make a good set of questions from. Expand them into complete, accurate lesson notes on the same topic(s) for ${level}, in ${language}${language === "English" ? " (British spelling, as used in Nigerian schools)" : ""}, following the Nigerian curriculum.
+- What the teacher taught is the yardstick. First work out the points they actually made, in their order. Expand only those points, in that order, at a depth that matches how they taught them; do not add topics they did not touch.
 - Keep every correct point the teacher made, correct anything that is wrong, and drop filler and chatter.
-- Add what a good lesson on this topic covers: clear definitions ("X is …"), lists ("The types of X are:" followed by "- " bullet lines), causes and reasons ("… because …"), examples from Nigerian life, and important dates or figures only when you are certain of them.
+- For each point, add what a good lesson on it covers: clear definitions ("X is …"), lists ("The types of X are:" followed by "- " bullet lines), causes and reasons ("… because …"), examples from Nigerian life, and important dates or figures only when you are certain of them.
 - Use short headings in capital letters and plain sentences. No markdown symbols other than "- " bullets.
 - About 300 to 600 words. Do not invent statistics, quotations or people.
 "title" names the topic in a few words; "notes" is the full expanded text; "additions" lists, in a few words each, the main points you added or corrected.`;

@@ -8,6 +8,7 @@ import { readFiles, readFile } from "./extract.js";
 import { aiGenerate, aiCheck, aiExpand, basicGenerate, normalize, LEVELS, DIFFICULTY, LANGUAGES } from "./generate.js";
 import { checkFacts } from "./factcheck.js";
 import { TOPICS, suggestTopics } from "./topics.js";
+import { expandFromLesson } from "./expand.js";
 import { parseQuestions } from "./import.js";
 import { shrinkImage } from "./school.js";
 
@@ -115,6 +116,7 @@ export async function editorView(id, opts = {}) {
   /* ----- check facts / expand short notes ----- */
   // Fixes find their text again by its original words, so fixing one doesn't break the others.
   const srcBox = $("#srcText", v);
+  if (quiz.notes && !srcBox.value) srcBox.value = quiz.notes;   // notes saved with this quiz
   let checkedText = null, issues = [];
   const applyIssue = (it) => {
     const t = srcBox.value, at = t.indexOf(it.orig, Math.max(0, it.at - 80)), i = at >= 0 ? at : t.indexOf(it.orig);
@@ -160,15 +162,28 @@ export async function editorView(id, opts = {}) {
   }
   $("#checkBtn", v).onclick = () => runCheck();
 
+  // The teacher's own earlier lessons (notes saved with their quizzes) are a source for expansion too.
+  let pastCache = null;
+  async function pastLessons() {
+    if (pastCache) return pastCache;
+    try {
+      const rows = await q(sb.from("quizzes").select("id,title,notes").eq("owner_id", ctx.user.id).not("notes", "is", null).order("updated_at", { ascending: false }).limit(30));
+      pastCache = rows.filter((r) => r.id !== quiz.id && r.notes).map((r) => ({ from: "Your lesson: " + r.title, text: r.notes }));
+    } catch { pastCache = []; }   // older database without saved notes
+    return pastCache;
+  }
+
   function showExpand(message = "") {
     const box = $("#expandBox", v), text = srcBox.value;
     const words = (text.match(/\S+/g) || []).length;
     const sug = suggestTopics(text), rest = TOPICS.filter((t) => !sug.includes(t));
     box.hidden = false;
     box.innerHTML = `<div class="spread"><b>Expand my notes</b><button class="btn ghost sm" data-close type="button">Close</button></div>
-      <p style="margin:0">${esc(message || `Your notes have ${words} words. Questions come out better from fuller notes: add a checked topic note below${AI_ENABLED ? ", or let the AI expand what you wrote" : ""}.`)}</p>
-      ${AI_ENABLED ? `<div class="row"><button class="btn sm primary" data-ai type="button">Expand with AI</button><span class="muted" style="font-size:13px">Keeps your points, corrects mistakes, adds definitions, lists and examples.</span></div>` : ""}
-      ${sug.length ? `<div><span class="label">Matches your notes</span><div class="row" style="margin-top:6px">${sug.map((t) => `<button class="btn sm" data-topic="${t.id}" type="button">+ ${esc(t.title)}</button>`).join("")}</div></div>` : ""}
+      <p style="margin:0">${esc(message || `Your notes have ${words} words. Questions come out better from fuller notes.`)}</p>
+      <div class="row"><button class="btn sm primary" data-taught type="button">Expand from what I taught</button><span class="muted" style="font-size:13px">Follows your points in your order, and adds only matching facts from checked notes and your earlier lessons.</span></div>
+      ${AI_ENABLED ? `<div class="row"><button class="btn sm" data-ai type="button">Expand with AI</button><span class="muted" style="font-size:13px">The AI fills out the same points you taught, correcting mistakes.</span></div>` : ""}
+      <div id="taughtPreview"></div>
+      ${sug.length ? `<div><span class="label">Or add a whole topic note</span><div class="row" style="margin-top:6px">${sug.map((t) => `<button class="btn sm" data-topic="${t.id}" type="button">+ ${esc(t.title)}</button>`).join("")}</div></div>` : ""}
       <div class="field"><label class="label" for="topicPick">All topic notes</label><select id="topicPick"><option value="">Choose a topic to add…</option>${(sug.length ? rest : TOPICS).map((t) => `<option value="${t.id}">${esc(t.subject)}: ${esc(t.title)}</option>`).join("")}</select></div>
       <p class="muted" style="margin:0;font-size:13px">Topic notes are short, checked notes for common Nigerian school topics. You can also <a href="#/record">record a lesson</a> or paste more of your own notes.</p>`;
     const add = (id) => {
@@ -179,6 +194,26 @@ export async function editorView(id, opts = {}) {
     box.onclick = async (e) => {
       if (e.target.closest("[data-close]")) { box.hidden = true; return; }
       const tb = e.target.closest("[data-topic]"); if (tb) add(tb.dataset.topic);
+      // Scan what was taught, then show what would be added under each point before changing anything.
+      const tt = e.target.closest("[data-taught]");
+      if (tt) {
+        tt.disabled = true; tt.textContent = "Reading your lesson…";
+        const past = await pastLessons();
+        const r = expandFromLesson(srcBox.value, [...TOPICS.map((t) => ({ from: "Checked notes: " + t.title, text: t.text, keys: t.keys })), ...past]);
+        tt.disabled = false; tt.textContent = "Expand from what I taught";
+        const pv = $("#taughtPreview", box);
+        if (!r.addedCount) {
+          pv.innerHTML = `<p class="notice" style="margin:0">Nothing in the checked notes${past.length ? " or your earlier lessons" : ""} closely matches the points you taught, so nothing was added. ${AI_ENABLED ? "Try <b>Expand with AI</b>, or add" : "Add"} a topic note below, or teach a little more on each point.</p>`;
+          return;
+        }
+        pv.innerHTML = `<div class="taught"><span class="label">What you taught, and what would be added</span>
+          <ol>${r.points.map((p) => `<li><b>${esc(p.label || "Your words")}</b><div class="muted" style="font-size:13px">“${esc(p.said.length > 140 ? p.said.slice(0, 140) + "…" : p.said)}”</div>
+            ${p.added.length ? `<ul>${p.added.map((a) => `<li>+ ${esc(a.text.split("\n")[0])}${a.text.includes("\n") ? ` <span class="muted">(+${a.text.split("\n").length - 1} points)</span>` : ""} <span class="chip">${esc(a.from.startsWith("Your") ? "your lesson" : "checked notes")}</span></li>`).join("")}</ul>` : `<div class="muted" style="font-size:13px">Nothing matching to add.</div>`}</li>`).join("")}</ol>
+          <div class="row"><button class="btn sm primary" data-use type="button">Use these notes</button><button class="btn sm ghost" data-cancel type="button">Cancel</button></div></div>`;
+        pv.querySelector("[data-use]").onclick = () => { srcBox.value = r.notes; checkedText = null; showExpand(`Expanded with ${r.addedCount} additions, following your ${r.points.length} points. Read it through, then press Generate questions.`); };
+        pv.querySelector("[data-cancel]").onclick = () => (pv.innerHTML = "");
+        return;
+      }
       const ab = e.target.closest("[data-ai]");
       if (ab) {
         ab.disabled = true; ab.textContent = "Expanding…";
@@ -276,10 +311,20 @@ export async function editorView(id, opts = {}) {
     if (!quiz.title.trim()) quiz.title = "Untitled quiz";
     const row = { title: quiz.title.trim(), source_name: quiz.source_name, questions: quiz.questions.map(({ _new, ...x }) => x) };
     if (ctx.head?.school && !quiz.id) row.department = ctx.head.member?.department || "";
+    // Keep the lesson notes with the quiz, so later lessons can be expanded from them.
+    const notes = srcBox.value.trim();
+    if (notes && !ctx.noNotesColumn) row.notes = notes.slice(0, 200000);
     $("#save", v).disabled = true;
+    const write = async (r) => {
+      if (quiz.id) await q(sb.from("quizzes").update(r).eq("id", quiz.id));
+      else { const x = await q(sb.from("quizzes").insert(r).select("id").single()); quiz.id = x.id; ctx.replaceHash("#/edit/" + x.id); }
+    };
     try {
-      if (quiz.id) await q(sb.from("quizzes").update(row).eq("id", quiz.id));
-      else { const r = await q(sb.from("quizzes").insert(row).select("id").single()); quiz.id = r.id; ctx.replaceHash("#/edit/" + r.id); }
+      try { await write(row); }
+      catch (err) {   // database not updated yet: save without the notes
+        if (!("notes" in row) || !/notes/i.test(err.message)) throw err;
+        ctx.noNotesColumn = true; delete row.notes; await write(row);
+      }
       markDirty(false); toast("Quiz saved"); return true;
     } catch (e) { toast(e.message, true); return false; }
     finally { $("#save", v).disabled = false; }

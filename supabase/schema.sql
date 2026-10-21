@@ -65,6 +65,8 @@ create table if not exists public.quizzes (
   updated_at  timestamptz not null default now()
 );
 alter table public.quizzes add column if not exists exam jsonb;
+-- The lesson notes a quiz was made from, so later lessons can be expanded from them.
+alter table public.quizzes add column if not exists notes text check (notes is null or length(notes) <= 200000);
 alter table public.quizzes add column if not exists school_id uuid references public.schools(id) on delete set null;
 alter table public.quizzes add column if not exists department text not null default '';
 alter table public.quizzes add column if not exists review_status text not null default 'draft';
