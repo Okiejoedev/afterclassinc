@@ -1,28 +1,36 @@
 /* Afterclass — shared styles.
    Answer options use exam OMR bubbles (A B C D) as the recurring motif. */
+/* Look: Adire & Earth. Adire is the Yoruba indigo-dyed cloth: indigo for actions and
+   game screens, terracotta and ochre accents, forest green for success, on warm sand.
+   Patterns (below) echo adire's oniko tie-dye circles and eleko stencilled lines. */
 :root {
-  --bg: #F3F5FA; --surface: #FFFFFF; --sunk: #E9EDF6; --ink: #17203B; --muted: #58617F; --line: #D8DEEC;
-  --accent: #2B4FD6; --accent-ink: #FFFFFF; --hi: #FFE15A; --hi-ink: #1A1A12;
-  --good: #138A59; --good-bg: #DDF3E8; --bad: #C93E36; --bad-bg: #FBE3E1; --warn: #9A6A00; --warn-bg: #FFF3CF;
-  --a: #DD4F3A; --b: #2D6BDB; --c: #C98A06; --d: #15917E;
-  --stage: #111733; --stage-2: #1B2349; --stage-3: #262F5C; --stage-line: #39427A; --stage-ink: #F1F3FB; --stage-muted: #BAC2E4;
+  --bg: #F5EEE2; --surface: #FFFCF6; --sunk: #EFE4D3; --ink: #1F1B2E; --muted: #6A5D51; --line: #E2D3BC;
+  --accent: #23367E; --accent-ink: #FFFFFF; --hi: #E3A835; --hi-ink: #2A1A05; --clay: #B9512B;
+  --good: #2E7A4F; --good-bg: #E1EFE3; --bad: #B23A2A; --bad-bg: #F8E0DA; --warn: #8A5B00; --warn-bg: #FBEBC8;
+  --a: #B9512B; --b: #2F4FA6; --c: #A97810; --d: #2E7A4F;
+  --stage: #141B3D; --stage-2: #1D2654; --stage-3: #29336A; --stage-line: #3C4785; --stage-ink: #F6EFE3; --stage-muted: #C9C1DC;
   --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
   --r: 10px;
+  /* adire motifs */
+  --adire: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%2323367E' stroke-opacity='.075' stroke-width='1.6'%3E%3Ccircle cx='14' cy='14' r='8'/%3E%3Ccircle cx='14' cy='14' r='3.5'/%3E%3Ccircle cx='42' cy='42' r='8'/%3E%3Ccircle cx='42' cy='42' r='3.5'/%3E%3Cpath d='M34 6h16M34 12h16M34 18h16M6 34h16M6 40h16M6 46h16'/%3E%3C/g%3E%3C/svg%3E");
+  --adire-night: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23F6EFE3' stroke-opacity='.06' stroke-width='1.6'%3E%3Ccircle cx='14' cy='14' r='8'/%3E%3Ccircle cx='14' cy='14' r='3.5'/%3E%3Ccircle cx='42' cy='42' r='8'/%3E%3Ccircle cx='42' cy='42' r='3.5'/%3E%3Cpath d='M34 6h16M34 12h16M34 18h16M6 34h16M6 40h16M6 46h16'/%3E%3C/g%3E%3C/svg%3E");
+  --zigzag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='8' viewBox='0 0 20 8'%3E%3Cpath d='M0 7 5 1l5 6 5-6 5 6' fill='none' stroke='%23E3A835' stroke-width='1.8'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0D1224; --surface: #151C36; --sunk: #10162C; --ink: #E5E9F6; --muted: #98A1C2; --line: #2A3356;
-    --accent: #7D97FF; --accent-ink: #0D1224; --hi: #F0CB3E;
-    --good: #3DC088; --good-bg: #12372A; --bad: #F2746B; --bad-bg: #3E1C1E; --warn: #F0CB3E; --warn-bg: #3A3113;
+    --bg: #15122A; --surface: #1F1B3A; --sunk: #191631; --ink: #F3EBDD; --muted: #B8AC9A; --line: #3A3462;
+    --accent: #9EAEF5; --accent-ink: #15122A; --hi: #E8B54A; --clay: #E07B55;
+    --good: #5CC48E; --good-bg: #173527; --bad: #F08A78; --bad-bg: #3D1D1C; --warn: #E8B54A; --warn-bg: #3A2E12;
+    --adire: var(--adire-night);
     color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--f-body); min-height: 100vh; }
+body { background: var(--adire) var(--bg); color: var(--ink); font: 16px/1.55 var(--f-body); min-height: 100vh; }
 h1, h2, h3 { font-family: var(--f-display); line-height: 1.12; text-wrap: balance; margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--accent); }
@@ -131,7 +139,7 @@ table.data tr.click:hover td { background: var(--sunk); }
 .editor .opt-row input[type=radio] { accent-color: var(--good); flex: none; }
 
 /* ---------- game stage (host screen + student phone) ---------- */
-body.stage { background: radial-gradient(1200px 600px at 50% -10%, var(--stage-2), var(--stage)) fixed; color: var(--stage-ink); color-scheme: dark; }
+body.stage { background: var(--adire-night), radial-gradient(1200px 600px at 50% -10%, var(--stage-2), var(--stage)) fixed; color: var(--stage-ink); color-scheme: dark; }
 body.stage .label { color: var(--stage-muted); }
 body.stage .btn { border-color: var(--stage-line); color: var(--stage-ink); background: transparent; }
 body.stage .btn:hover { background: var(--stage-3); }
@@ -416,7 +424,7 @@ html.lite body { font-family: "Segoe UI", system-ui, sans-serif; }
 .qa-panel .qa-item > .row { flex-basis: 100%; justify-content: flex-end; }
 
 /* ---------- home page + student dashboard ---------- */
-body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in srgb, var(--accent) 14%, transparent), transparent), var(--bg); }
+body.home { background: radial-gradient(900px 420px at 85% -80px, color-mix(in srgb, var(--clay) 16%, transparent), transparent), var(--adire) var(--bg); }
 .home-wrap { max-width: 1120px; margin: 0 auto; padding: 18px 20px 40px; display: grid; gap: 28px; }
 .home-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .hero { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 32px; align-items: center; padding: 3vh 0 1vh; }
@@ -535,3 +543,50 @@ body.stage .btn.wa { background: #1F9D55; border-color: #1F9D55; color: #fff; }
 .taught { display: grid; gap: 8px; background: var(--sunk); border-radius: 10px; padding: 10px 12px; }
 .taught > ol { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
 .taught ul { margin: 4px 0 0; padding-left: 4px; list-style: none; display: grid; gap: 3px; font-size: 14px; }
+
+/* ---------- Adire & Earth: header band, section badges ---------- */
+.topbar { background: var(--adire-night), linear-gradient(120deg, var(--stage), var(--stage-2)); color: var(--stage-ink); border-radius: 16px; padding: 10px 14px; position: relative; margin-bottom: 8px; }
+.topbar::after { content: ""; position: absolute; left: 18px; right: 18px; bottom: -11px; height: 8px; background: var(--zigzag) repeat-x; opacity: .9; }
+.topbar .brand { color: var(--stage-ink); }
+.topbar .tabs { background: rgba(255, 255, 255, .07); }
+.topbar .tabs a { color: var(--stage-muted); }
+.topbar .tabs a:hover { color: var(--stage-ink); }
+.topbar .tabs a.on { background: var(--hi); color: var(--hi-ink); box-shadow: none; }
+.topbar .acct { color: var(--stage-muted); }
+.topbar .btn { background: transparent; color: var(--stage-ink); border-color: var(--stage-line); }
+.topbar .btn:hover { background: var(--stage-3); }
+.pin-card { background: var(--adire-night), var(--stage); }
+.home-top { padding-bottom: 12px; border-bottom: 8px solid transparent; border-image: var(--zigzag) 0 0 8 0 repeat; }
+.sec-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font: 700 11px/1.5 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; }
+.sec-badge.primary { background: var(--hi); color: var(--hi-ink); }
+.sec-badge.secondary { background: #DCE2F5; color: #23367E; }
+.sec-badge.higher { background: var(--good-bg); color: var(--good); }
+.topbar .sec-badge.secondary { background: rgba(255, 255, 255, .14); color: var(--stage-ink); }
+.page-h .label { color: var(--clay); }
+.stat b { color: var(--accent); }
+@media (prefers-color-scheme: dark) { .sec-badge.secondary { background: #2A3266; color: #DCE2F5; } }
+
+/* ---------- sections (Primary / Secondary / Higher) ---------- */
+.sections { display: grid; gap: 16px; }
+.sec-title { font-size: clamp(24px, 3.4vw, 32px); }
+.sec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: 16px; }
+.sec-card { background: var(--adire) right -18px top -18px / 112px no-repeat, var(--surface); border: 1px solid var(--line); border-top: 6px solid var(--accent); border-radius: 18px; padding: 20px 22px; display: grid; gap: 12px; align-content: start; }
+.sec-card.primary { border-top-color: var(--hi); }
+.sec-card.higher { border-top-color: var(--good); }
+.sec-card h3 { font-size: 22px; }
+.sec-card ul { margin: 0; padding-left: 20px; display: grid; gap: 5px; color: var(--muted); }
+.sec-card .btn { justify-self: start; }
+.sec-pick { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; min-width: 0; }
+.sec-pick-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); gap: 8px; }
+.sec-opt { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; cursor: pointer; position: relative; background: var(--surface); }
+.sec-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.sec-opt span { font-size: 12px; color: var(--muted); }
+.sec-opt:has(input:checked) { border-color: var(--accent); background: var(--sunk); }
+.sec-opt.primary:has(input:checked) { border-color: var(--hi); }
+.sec-opt.higher:has(input:checked) { border-color: var(--good); }
+.sec-opt:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.stars-cell { display: flex; align-items: center; gap: 6px; }
+.stars { min-width: 52px; font-weight: 800; color: var(--warn); transition: transform .2s; }
+.stars.pop { transform: scale(1.3); }
+.star-btn { background: var(--hi); border-color: var(--hi); color: var(--hi-ink); }
+.sec-card .sec-badge { justify-self: start; }

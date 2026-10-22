@@ -69,7 +69,7 @@ export function loadCss(href) {
 export const fmtDate = (d) => d ? new Date(d).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
 export const pct = (n, d) => d ? Math.round((100 * n) / d) : 0;
 
-export const LOGO = `<svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="21" cy="9" r="6.5" fill="#FFE15A"/><circle cx="9" cy="21" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="21" cy="21" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+export const LOGO = `<svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="21" cy="9" r="6.5" fill="#E3A835"/><circle cx="9" cy="21" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="21" cy="21" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 
 /* ---------- pictures in questions ---------- */
 export const qimg = (q, cls = "qimg") => q?.image ? `<img class="${cls}" src="${esc(q.image)}" alt="Picture for this question" loading="lazy">` : "";

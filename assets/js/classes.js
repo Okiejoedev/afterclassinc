@@ -4,24 +4,35 @@ import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, ask, fmtDate, waButton } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
 
+// Words and examples for each section's "classes" page.
+const INTRO = {
+  primary: { label: "Classes & star chart", text: "Add your class and its pupils once. Award stars for good work and behaviour, and pick the class when you run a game or test so results show real names. Pupils don't need accounts.", example: "e.g. Primary 4 Blue, Basic 2A" },
+  secondary: { label: "Rosters", text: "Add a class once, then pick it when you start a test. Students join with their admission number, so each gets one attempt and results show real names.", example: "e.g. JSS 2A, SS 3 Science" },
+  higher: { label: "Courses", text: "Add each course you teach. Students join with the course code and their matric number, so each gets one attempt at CA tests and results show real names.", example: "e.g. BIO 201 Cell Biology (2026/27)" },
+};
 export async function classesView() {
-  const w = words();
-  const v = frame("classes", `<div class="page-h"><div><span class="label">Rosters</span><h1>Class lists</h1>
-    <p class="muted" style="margin:4px 0 0">Add a class once, then pick it when you start a test. ${w.Learners} join with their admission / matric number, so each gets one attempt and results show real names.</p></div></div>
+  const w = words(), sec = ctx.section, intro = INTRO[sec];
+  const v = frame("classes", `<div class="page-h"><div><span class="label">${intro.label}</span><h1>${w.Classes}</h1>
+    <p class="muted" style="margin:4px 0 0">${intro.text}</p></div></div>
     <form class="panel" id="newClass" style="grid-template-columns:minmax(0,1fr) auto;align-items:end">
-      <div class="field"><label class="label" for="cName">New class</label><input id="cName" type="text" maxlength="80" placeholder="e.g. JSS 2A, SS 3 Science, BIO 201 (2026/27)"></div>
-      <button class="btn primary" type="submit">Create class</button></form>
+      <div class="field"><label class="label" for="cName">New ${w.klass}</label><input id="cName" type="text" maxlength="80" placeholder="${intro.example}"></div>
+      <button class="btn primary" type="submit">Create ${w.klass}</button></form>
     <div id="list"><p class="muted">Loading…</p></div>`);
   const sel = (cols) => q(sb.from("classes").select(cols).eq("owner_id", ctx.user.id).order("name"));
   const rows = await sel("id,name,created_at,join_code,students(count)").catch(() => sel("id,name,created_at,students(count)"));
   $("#list", v).innerHTML = rows.length ? `<div class="grid-cards">${rows.map((c) => `<a class="qcard" href="#/class/${c.id}" style="text-decoration:none;color:inherit"><h3>${esc(c.name)}</h3>
       <div class="meta"><span class="num">${c.students?.[0]?.count ?? 0} ${w.learners}</span><span>Created ${fmtDate(c.created_at)}</span></div>
-      ${c.join_code ? `<div class="meta">Class code <span class="code-pill" style="cursor:inherit">${esc(c.join_code)}</span></div>` : ""}</a>`).join("")}</div>`
-    : `<div class="empty">No class lists yet. Create one above, then paste names from Excel or your register.</div>`;
+      ${c.join_code && sec !== "primary" ? `<div class="meta">${w.Klass} code <span class="code-pill" style="cursor:inherit">${esc(c.join_code)}</span></div>` : ""}</a>`).join("")}</div>`
+    : `<div class="empty">No ${w.classes.toLowerCase()} yet. Create one above, then paste names from Excel or your register.</div>`;
   $("#newClass", v).onsubmit = async (e) => {
     e.preventDefault();
     const name = $("#cName", v).value.trim(); if (!name) return;
-    try { const c = await q(sb.from("classes").insert({ name }).select("id").single()); location.hash = "#/class/" + c.id; }
+    try {
+      // Young pupils don't see rankings: primary classes start with the leaderboard off.
+      const row = sec === "primary" ? { name, leaderboard: false } : { name };
+      const c = await q(sb.from("classes").insert(row).select("id").single()).catch(() => q(sb.from("classes").insert({ name }).select("id").single()));
+      location.hash = "#/class/" + c.id;
+    }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -50,33 +61,43 @@ export function parseRoster(text) {
   return out;
 }
 
+// Primary rosters are often names only: number them P001, P002…
+function parseNames(text, existing) {
+  let n = existing;
+  return String(text).split(/\r?\n/).map((l) => l.trim().replace(/^\d+[.)]\s*/, "")).filter((l) => l && !/\d{2,}/.test(l))
+    .map((name) => ({ student_no: "P" + String(++n).padStart(3, "0"), full_name: name.replace(/\s+/g, " ").slice(0, 80) }));
+}
+
 export async function classView(id) {
-  const w = words();
+  const w = words(), sec = ctx.section, primary = sec === "primary";
   const v = frame("classes", `<p class="muted">Loading…</p>`);
   const cls = await q(sb.from("classes").select("*").eq("id", id).maybeSingle());
   if (!cls) { v.innerHTML = `<div class="notice">Class not found. <a href="#/classes">Back</a></div>`; return; }
   const students = await q(sb.from("students").select("*").eq("class_id", id).order("full_name"));
+  const hasStars = students.length ? "stars" in students[0] : true;   // older database: no star chart yet
   v.innerHTML = `
-    <div class="page-h"><div><a href="#/classes" style="font-size:14px">← Class lists</a><h1>${esc(cls.name)}</h1><p class="muted" style="margin:4px 0 0">${students.length} ${w.learners}${students.some((s) => s.user_id) ? ` · ${students.filter((s) => s.user_id).length} registered` : ""}</p></div>
-      <div class="row"><button class="btn" id="rename" type="button">Rename</button><button class="btn ghost danger" id="delClass" type="button">Delete class</button></div></div>
-    ${cls.join_code ? `<section class="panel" style="grid-template-columns:auto minmax(0,1fr);align-items:center">
+    <div class="page-h"><div><a href="#/classes" style="font-size:14px">← ${w.Classes}</a><h1>${esc(cls.name)}</h1><p class="muted" style="margin:4px 0 0">${students.length} ${w.learners}${students.some((s) => s.user_id) ? ` · ${students.filter((s) => s.user_id).length} registered` : ""}</p></div>
+      <div class="row"><button class="btn" id="rename" type="button">Rename</button><button class="btn ghost danger" id="delClass" type="button">Delete ${w.klass}</button></div></div>
+    ${cls.join_code && !primary ? `<section class="panel" style="grid-template-columns:auto minmax(0,1fr);align-items:center">
       <button class="code-pill" id="code" type="button" style="font-size:26px;padding:12px 16px" title="Copy code">${esc(cls.join_code)}</button>
-      <div><b>Class code</b><p class="muted" style="margin:2px 0 0;font-size:14px">${w.Learners} register on the home page (${esc(new URL("../", location.href).href)}) and enter this code to join. They're added to the list below, and tests you set for this class show up on their dashboard.</p>
-        <div class="row" style="margin-top:8px">${waButton(`Join our class "${cls.name}" on Afterclass: register at ${new URL("../", location.href).href} and enter the class code ${cls.join_code}.`, "Send code on WhatsApp", "btn sm")}</div></div></section>` : ""}
-    ${cls.leaderboard !== undefined ? `<section class="panel"><div class="spread"><h2 style="font-size:20px">Leaderboard</h2>
+      <div><b>${w.Klass} code</b><p class="muted" style="margin:2px 0 0;font-size:14px">${w.Learners} register on the home page (${esc(new URL("../", location.href).href)}) and enter this code to join. They're added to the list below, and tests you set for this ${w.klass} show up on their dashboard.</p>
+        <div class="row" style="margin-top:8px">${waButton(`Join our ${w.klass} "${cls.name}" on Afterclass: register at ${new URL("../", location.href).href} and enter the ${w.klass} code ${cls.join_code}.`, "Send code on WhatsApp", "btn sm")}</div></div></section>` : ""}
+    ${cls.leaderboard !== undefined && !primary ? `<section class="panel"><div class="spread"><h2 style="font-size:20px">Leaderboard</h2>
       <label class="check"><input type="checkbox" id="lbShow" ${cls.leaderboard ? "checked" : ""}> Show top 10 to ${w.learners}</label></div>
       <p class="muted" style="margin:0;font-size:14px">Average score over this class's tests and live games (games with hidden scores don't count). ${w.Learners} see the top 10 and their own place, never the bottom of the list.</p>
       <div id="lbList"><p class="muted">Loading…</p></div></section>` : ""}
     <div class="bench">
       <section class="panel"><h2 style="font-size:20px">Add ${w.learners}</h2>
-        <p class="muted" style="margin:0;font-size:14px">Paste one per line: admission / matric number and full name. You can copy two columns straight from Excel or Google Sheets.</p>
-        <textarea id="paste" rows="10" placeholder="ADM/2024/001, Okafor Adaeze&#10;ADM/2024/002, Bello Musa&#10;ADM/2024/003, Adeyemi Tolu"></textarea>
+        <p class="muted" style="margin:0;font-size:14px">${primary ? "Paste one pupil's name per line (or number and name). You can copy straight from Excel or your register." : `Paste one per line: ${w.number} and full name. You can copy two columns straight from Excel or Google Sheets.`}</p>
+        <textarea id="paste" rows="10" placeholder="${primary ? "Okafor Adaeze&#10;Bello Musa&#10;Adeyemi Tolu" : sec === "higher" ? "BIO/22/0145, Okafor Adaeze&#10;BIO/22/0146, Bello Musa&#10;BIO/22/0147, Adeyemi Tolu" : "ADM/2024/001, Okafor Adaeze&#10;ADM/2024/002, Bello Musa&#10;ADM/2024/003, Adeyemi Tolu"}"></textarea>
         <div class="row"><label class="btn sm" for="csv">Open CSV file</label><input id="csv" type="file" accept=".csv,.txt" hidden><span class="muted" id="pv" style="font-size:13px"></span></div>
-        <button class="btn primary" id="add" type="button" style="justify-self:start">Add to class</button>
+        <button class="btn primary" id="add" type="button" style="justify-self:start">Add to ${w.klass}</button>
       </section>
-      <section class="panel"><h2 style="font-size:20px">On the list</h2>
-        ${students.length ? `<div class="scroll-x"><table class="data"><thead><tr><th>Number</th><th>Name</th><th></th></tr></thead><tbody>
-          ${students.map((s) => `<tr data-sid="${s.id}"><td class="num">${esc(s.student_no)}</td><td>${esc(s.full_name)}${s.user_id ? ` <span class="chip live" title="Has a student account">REGISTERED</span>` : ""}</td><td><button class="btn sm ghost danger" data-del type="button">Remove</button></td></tr>`).join("")}</tbody></table></div>`
+      <section class="panel"><div class="spread"><h2 style="font-size:20px">${primary && hasStars ? "Star chart" : "On the list"}</h2>${primary && hasStars && students.some((s) => s.stars) ? `<button class="btn sm ghost" id="resetStars" type="button">Start a new term</button>` : ""}</div>
+        ${students.length ? `<div class="scroll-x"><table class="data"><thead><tr>${primary ? "" : `<th>${sec === "higher" ? "Matric no." : "Number"}</th>`}<th>Name</th>${primary && hasStars ? "<th>Stars</th>" : ""}<th></th></tr></thead><tbody>
+          ${(primary && hasStars ? students.slice().sort((a, b) => b.stars - a.stars || a.full_name.localeCompare(b.full_name)) : students).map((s) => `<tr data-sid="${s.id}">${primary ? "" : `<td class="num">${esc(s.student_no)}</td>`}<td>${esc(s.full_name)}${s.user_id ? ` <span class="chip live" title="Has a student account">REGISTERED</span>` : ""}</td>
+            ${primary && hasStars ? `<td><div class="stars-cell"><button class="btn sm ghost" data-star="-1" type="button" aria-label="Take a star from ${esc(s.full_name)}">−</button><span class="stars num" aria-live="polite">★ ${s.stars}</span><button class="btn sm star-btn" data-star="1" type="button" aria-label="Give ${esc(s.full_name)} a star">+★</button></div></td>` : ""}
+            <td><button class="btn sm ghost danger" data-del type="button">Remove</button></td></tr>`).join("")}</tbody></table></div>`
           : `<div class="empty">Nobody yet. Paste your list on the left.</div>`}
       </section>
     </div>`;
@@ -92,12 +113,16 @@ export async function classView(id) {
       catch (err) { e.target.checked = !e.target.checked; toast(err.message, true); }
     };
   }
-  const preview = () => { const r = parseRoster($("#paste", v).value); $("#pv", v).textContent = r.length ? `${r.length} ${w.learners} found` : ""; return r; };
+  const preview = () => {
+    const text = $("#paste", v).value, r = parseRoster(text);
+    const rows = primary && r.length < text.split(/\n/).filter((l) => l.trim()).length / 2 ? parseNames(text, students.length) : r;
+    $("#pv", v).textContent = rows.length ? `${rows.length} ${w.learners} found` : ""; return rows;
+  };
   $("#paste", v).oninput = preview;
   $("#csv", v).onchange = async (e) => { const f = e.target.files[0]; if (f) { $("#paste", v).value = await f.text(); preview(); } };
   $("#add", v).onclick = async () => {
     const rows = preview();
-    if (!rows.length) return toast("Paste at least one line: number, name", true);
+    if (!rows.length) return toast(primary ? "Paste at least one name" : "Paste at least one line: number, name", true);
     const existing = new Set(students.map((s) => s.student_no.toLowerCase()));
     const fresh = rows.filter((r) => !existing.has(r.student_no.toLowerCase())).map((r) => ({ ...r, class_id: id }));
     if (!fresh.length) return toast("Everyone in that list is already in the class", true);
@@ -105,14 +130,28 @@ export async function classView(id) {
     catch (err) { toast(err.message, true); }
   };
   v.addEventListener("click", async (e) => {
+    // Star chart: tap to give or take a star; saved straight away.
+    const sb2 = e.target.closest("[data-star]");
+    if (sb2) {
+      const tr = sb2.closest("tr"), st = students.find((x) => x.id === tr.dataset.sid);
+      const next = Math.max(0, (st.stars || 0) + Number(sb2.dataset.star));
+      if (next === st.stars) return;
+      try { await q(sb.from("students").update({ stars: next }).eq("id", st.id)); st.stars = next; tr.querySelector(".stars").textContent = `★ ${next}`; if (sb2.dataset.star === "1") tr.querySelector(".stars").classList.add("pop"); setTimeout(() => tr.querySelector(".stars")?.classList.remove("pop"), 400); }
+      catch (err) { toast(err.message, true); }
+      return;
+    }
     if (!e.target.closest("[data-del]")) return;
     const sid = e.target.closest("tr").dataset.sid;
-    if (!(await ask("Remove this student from the class list? Their past results stay.", "Remove", true))) return;
+    if (!(await ask(`Remove this ${w.learner} from the ${w.klass}? Their past results stay.`, "Remove", true))) return;
     await q(sb.from("students").delete().eq("id", sid)); classView(id);
+  });
+  $("#resetStars", v)?.addEventListener("click", async () => {
+    if (!(await ask("Start a new term? Every pupil's stars go back to 0.", "Reset stars", true))) return;
+    try { await q(sb.from("students").update({ stars: 0 }).eq("class_id", id)); toast("Stars reset"); classView(id); } catch (err) { toast(err.message, true); }
   });
   $("#rename", v).onclick = async () => {
     const d = document.createElement("dialog");
-    d.innerHTML = `<form method="dialog" class="dlg"><label class="label" for="rn">Class name</label><input id="rn" type="text" value="${esc(cls.name)}" maxlength="80"><div class="row" style="justify-content:flex-end"><button class="btn" value="no">Cancel</button><button class="btn primary" value="yes">Save</button></div></form>`;
+    d.innerHTML = `<form method="dialog" class="dlg"><label class="label" for="rn">${w.Klass} name</label><input id="rn" type="text" value="${esc(cls.name)}" maxlength="80"><div class="row" style="justify-content:flex-end"><button class="btn" value="no">Cancel</button><button class="btn primary" value="yes">Save</button></div></form>`;
     document.body.appendChild(d); d.showModal();
     d.addEventListener("close", async () => {
       const name = d.querySelector("#rn").value.trim(); d.remove();
@@ -120,7 +159,7 @@ export async function classView(id) {
     });
   };
   $("#delClass", v).onclick = async () => {
-    if (!(await ask(`Delete the class "${cls.name}" and its list? Past results stay.`, "Delete class", true))) return;
+    if (!(await ask(`Delete the ${w.klass} "${cls.name}" and its list? Past results stay.`, `Delete ${w.klass}`, true))) return;
     await q(sb.from("classes").delete().eq("id", id)); location.hash = "#/classes";
   };
 }

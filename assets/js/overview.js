@@ -2,7 +2,7 @@
 // what's running now, recent quizzes, class codes for students, and results.
 import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, fmtDate, waButton } from "./ui.js";
-import { ctx, frame, words } from "./shell.js";
+import { ctx, frame, words, sectionBadge } from "./shell.js";
 import { sampleDialog } from "./samples.js";
 
 const isOpen = (s) => s.kind === "assignment"
@@ -16,6 +16,50 @@ async function loadClasses() {
   try { return await q(sb.from("classes").select("id,name,join_code,students(count)").eq("owner_id", ctx.user.id).order("name")); }
   catch { return q(base()); }
 }
+
+// Each section gets its own quick actions (the tools that matter most there).
+function quickActions(sec, w) {
+  if (sec === "primary") return `
+      <a class="go" href="#/quizzes?pick=teams"><b>Class teams game</b><span>No phones: the class plays in teams on the board</span></a>
+      <a href="#/quizzes?pick=live"><b>▶ Live game</b><span>Big pictures and read-aloud on pupils' phones or tablets</span></a>
+      <a href="#/new?blank"><b>Make a simple quiz</b><span>Type questions, or build one from your notes</span></a>
+      <a href="#/quizzes?pick=print"><b>Print a worksheet</b><span>With your school's name and logo</span></a>
+      <a href="#/classes"><b>Star chart</b><span>Give stars to pupils in your class</span></a>
+      <a href="#" data-sample><b>Try a sample quiz</b><span>Ready-made, play it in a minute</span></a>`;
+  if (sec === "higher") return `
+      <a class="go" href="#/quizzes?pick=live"><b>Live lecture</b><span>Polls, quiz and Q&amp;A from ${w.learners}' phones</span></a>
+      <a href="#/quizzes?pick=assign"><b>CA test (CBT)</b><span>Timed, one attempt per matric number</span></a>
+      <a href="#/quizzes?pick=print"><b>Semester exam paper</b><span>Faculty heading, sections, marking scheme</span></a>
+      <a href="#/record"><b>Record a lecture</b><span>Questions from what you said</span></a>
+      <a href="#/new"><b>+ Questions from notes</b><span>Upload lecture notes or slides as PDF</span></a>
+      <a href="#/classes"><b>Create a course</b><span>Share its code with your ${w.learners}</span></a>`;
+  return `
+      <a class="go" href="#/new"><b>+ Quiz from your notes</b><span>Upload a PDF, Word file or paste notes</span></a>
+      <a href="#/record"><b>Record a lesson</b><span>Teach as normal; get questions after</span></a>
+      <a href="#/quizzes?pick=assign"><b>CBT test</b><span>Timer, class list, one attempt each</span></a>
+      <a href="#/quizzes?pick=print"><b>WAEC-style exam paper</b><span>Sections A and B, OMR sheet, marking scheme</span></a>
+      <a href="#/new?import"><b>Import past questions</b><span>Paste questions you already have</span></a>
+      <a href="#" data-sample><b>Try a sample quiz</b><span>Ready-made, play it in a minute</span></a>`;
+}
+function gettingStarted(sec, w, quizzes, sessions, classes) {
+  if (sec === "primary") return `
+      ${step(quizzes.length > 0, "Make a quiz", `Type a few simple questions, build one from your notes, or <a href="#" data-sample>add a sample quiz</a>.`)}
+      ${step(sessions.length > 0, "Play it with your class", `No phones? Press <b>Class teams</b>: the question goes on the board and you score the teams. With phones or tablets, press <b>▶ Play live</b>; pupils join with the PIN and can have questions read aloud.`)}
+      ${step(classes.length > 0, "Add your class and give stars", `Create your class, paste the pupils' names, and award stars on the star chart.`)}`;
+  if (sec === "higher") return `
+      ${step(classes.length > 0, "Create a course", `Add a course (e.g. "BIO 201 Cell Biology") and share its code; ${w.learners} join it from their dashboard with their matric numbers.`)}
+      ${step(quizzes.length > 0, "Make questions", `From lecture notes or slides (PDF), by recording a lecture, or by importing past questions.`)}
+      ${step(sessions.length > 0, "Run it", `Use it live in the lecture hall (polls, quiz and Q&amp;A), or set a timed CA test for the course.`)}`;
+  return `
+      ${step(quizzes.length > 0, "Make a quiz", `From your notes, by typing questions, or <a href="#" data-sample>add a sample quiz</a>.`)}
+      ${step(sessions.some((s) => s.kind === "live"), "Play it as a live game", `Press <b>▶ Play live</b> on a quiz. Put the host screen on a projector or share it on Zoom; ${w.learners} join on their phones with the PIN. A leaderboard shows after each question and a podium at the end.`)}
+      ${step(classes.length > 0, "Add your class", `Create a class list, then give ${w.learners} the class code so tests you set appear on their dashboard.`)}`;
+}
+// Teachers who registered before sections existed choose theirs once.
+const chooseSection = () => `<section class="panel sec-choose"><h2 class="h2">Which section do you teach in?</h2>
+    <p class="muted" style="margin:0">Afterclass gives each section its own tools. You can change this later under School.</p>
+    <div class="row"><button class="btn" data-kind="primary" type="button">Primary school</button><button class="btn" data-kind="secondary" type="button">Secondary school</button>
+      <button class="btn" data-kind="university" type="button">University</button><button class="btn" data-kind="polytechnic" type="button">Polytechnic</button><button class="btn" data-kind="college" type="button">College of Education / other college</button></div></section>`;
 
 const step = (done, title, body) => `<li class="${done ? "done" : ""}"><span class="tick" aria-hidden="true">${done ? "✓" : ""}</span><div><b>${title}</b>${done ? ` <span class="chip live">DONE</span>` : ""}<p class="muted" style="margin:2px 0 0;font-size:14px">${body}</p></div></li>`;
 
@@ -33,27 +77,25 @@ export async function overviewView() {
   const people = (s) => s.players?.[0]?.count ?? 0;
   const learners = classes.reduce((a, c) => a + (c.students?.[0]?.count ?? 0), 0);
   const running = sessions.filter(isOpen), recent = sessions.filter((s) => !isOpen(s)).slice(0, 6);
+  const sec = ctx.section;
+  // Primary: the star chart's top pupils (needs the newer database; skipped otherwise).
+  const stars = sec === "primary" && classes.length
+    ? await q(sb.from("students").select("full_name,stars,class_id").in("class_id", classes.map((c) => c.id)).gt("stars", 0).order("stars", { ascending: false }).limit(6)).catch(() => [])
+    : [];
 
   v.innerHTML = `
-    <div class="page-h"><div><span class="label">Dashboard</span><h1>${hello}${name ? ", " + esc(name) : ""}</h1>
+    ${ctx.needSection ? chooseSection() : ""}
+    <div class="page-h"><div><span class="label">Dashboard ${sectionBadge()}</span><h1>${hello}${name ? ", " + esc(name) : ""}</h1>
       <p class="muted" style="margin:4px 0 0">${running.length ? `${running.length} session${running.length > 1 ? "s are" : " is"} running right now.` : "Here's everything in one place."}</p></div></div>
     <div class="stat-row">
       <a class="stat link" href="#/quizzes"><span class="label">Quizzes</span><b>${quizzes.length}</b></a>
-      <a class="stat link" href="#/classes"><span class="label">${w.Learners} on class lists</span><b>${learners}</b></a>
+      <a class="stat link" href="#/classes"><span class="label">${w.Learners} on your ${w.classes.toLowerCase()}</span><b>${learners}</b></a>
       <a class="stat link" href="#/sessions"><span class="label">Games &amp; tests run</span><b>${sessions.length}</b></a>
       <a class="stat link" href="#/sessions"><span class="label">Took part</span><b>${sessions.reduce((a, s) => a + people(s), 0)}</b></a>
     </div>
-    <div class="quick">
-      <a class="go" href="#/new"><b>+ Quiz from your notes</b><span>Upload a PDF, Word file or paste notes</span></a>
-      <a href="#/record"><b>Record a lesson</b><span>Teach as normal; get questions after</span></a>
-      <a href="#/new?blank"><b>Type your own questions</b><span>Build a quiz question by question</span></a>
-      <a href="#/quizzes"><b>▶ Play a live game</b><span>Pick a quiz and press Play live</span></a>
-      <a href="#" data-sample><b>Try a sample quiz</b><span>Ready-made, play it in a minute</span></a>
+    <div class="quick">${quickActions(sec, w)}
     </div>
-    ${!quizzes.length || !sessions.length ? `<section class="panel"><h2 class="h2">Getting started</h2><ol class="steps-list">
-      ${step(quizzes.length > 0, "Make a quiz", `From your notes, by typing questions, or <a href="#" data-sample>add a sample quiz</a>.`)}
-      ${step(sessions.some((s) => s.kind === "live"), "Play it as a live game", `Press <b>▶ Play live</b> on a quiz. Put the host screen on a projector or share it on Zoom; ${w.learners} join on their phones with the PIN. A leaderboard shows after each question and a podium at the end.`)}
-      ${step(classes.length > 0, "Add your class", `Create a class list, then give ${w.learners} the class code so tests you set appear on their dashboard.`)}
+    ${!quizzes.length || !sessions.length || !classes.length ? `<section class="panel"><h2 class="h2">Getting started</h2><ol class="steps-list">${gettingStarted(sec, w, quizzes, sessions, classes)}
     </ol></section>` : ""}
     <section class="panel" id="week" hidden></section>
     ${running.length ? `<section class="panel"><div class="spread"><h2 class="h2">Happening now</h2><span class="chip live">● LIVE</span></div>
@@ -71,18 +113,26 @@ export async function overviewView() {
           : `<p class="muted" style="margin:0">Finished games and tests will show up here.</p>`}</section>
       </div>
       <aside class="dash-side">
-        <section class="panel"><h2 class="h2">Class codes</h2>
-          <p class="muted" style="margin:0;font-size:14px">${w.Learners} register on the home page and join your class with its code. Tests you set for that class then appear on their dashboard.</p>
+        ${sec === "primary" ? `<section class="panel"><div class="spread"><h2 class="h2">Top stars</h2><a href="#/classes" style="font-size:14px">Star chart →</a></div>
+          ${stars.length ? `<ol class="board">${stars.map((p, i) => `<li><span class="pos">${i + 1}</span><span class="nm">${esc(p.full_name)}</span><span class="sc num">★ ${p.stars}</span></li>`).join("")}</ol>`
+            : `<p class="muted" style="margin:0;font-size:14px">Give stars to pupils for good work, answers and behaviour. Open a class to start the star chart.</p>`}</section>` : `<section class="panel"><h2 class="h2">${sec === "higher" ? "Course codes" : "Class codes"}</h2>
+          <p class="muted" style="margin:0;font-size:14px">${w.Learners} register on the home page and join your ${w.klass} with its code. Tests you set for that ${w.klass} then appear on their dashboard.</p>
           ${classes.length ? `<ul class="todo">${classes.map((c) => `<li><div><a href="#/class/${c.id}"><b>${esc(c.name)}</b></a><div class="muted" style="font-size:13px">${c.students?.[0]?.count ?? 0} ${w.learners}</div></div>
             ${c.join_code ? `<button class="code-pill" data-code="${esc(c.join_code)}" type="button" title="Copy code">${esc(c.join_code)}</button>` : ""}</li>`).join("")}</ul>
             ${classes.some((c) => !c.join_code) ? `<div class="notice">To get class codes, re-run <code>supabase/schema.sql</code> in Supabase → SQL Editor.</div>` : ""}`
-          : `<div class="empty" style="padding:18px">No classes yet. <a href="#/classes">Create a class</a></div>`}</section>
+          : `<div class="empty" style="padding:18px">No ${w.classes.toLowerCase()} yet. <a href="#/classes">Create a ${w.klass}</a></div>`}</section>`}
         <section class="panel"><h2 class="h2">Share the join page</h2>
           <p class="muted" style="margin:0;font-size:14px">${w.Learners} go here to register, or to join a game with its PIN.</p>
           <div class="row"><code style="overflow-wrap:anywhere">${esc(new URL("../", location.href).href)}</code><button class="btn sm" id="copySite" type="button">Copy</button>${waButton(`Join me on Afterclass for quizzes and tests: ${new URL("../", location.href).href}`, "WhatsApp", "btn sm")}</div></section>
       </aside>
     </div>`;
 
+  v.querySelectorAll(".sec-choose [data-kind]").forEach((b) => (b.onclick = async () => {
+    try {
+      await q(sb.from("school_profiles").upsert({ owner_id: ctx.user.id, kind: b.dataset.kind }));
+      ctx.needSection = false; await ctx.reloadHead(); toast("Your dashboard is set up for your section"); overviewView();
+    } catch (err) { toast(err.message, true); }
+  }));
   v.querySelectorAll("[data-sample]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); sampleDialog(() => (location.hash = "#/quizzes")); }));
   loadWeek($("#week", v), w);
   const copy = (t, msg) => navigator.clipboard?.writeText(t).then(() => toast(msg), () => toast(t));
@@ -96,6 +146,7 @@ export async function overviewView() {
 async function loadWeek(box, w) {
   let d;
   try { d = await rpc("teacher_week", {}); } catch { return; }
+  if (!d) return;
   box.hidden = false;
   if (!d.sessions && !d.sessions_prev) {
     box.innerHTML = `<h2 class="h2">This week</h2><p class="muted" style="margin:0">No games or tests in the last two weeks. Press <b>▶ Play live</b> on a quiz, or set an assignment, and your weekly summary appears here.</p>`;

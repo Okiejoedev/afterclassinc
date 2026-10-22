@@ -26,9 +26,12 @@ export async function home(h = hooks, msg = "") {
 // Teachers who registered before student accounts existed have no profile row: they are teachers.
 async function loadProfile() {
   const meta = user.user_metadata || {};
-  const fallback = { role: meta.role === "student" ? "student" : "teacher", full_name: meta.full_name || "", student_no: meta.student_no || "" };
-  try { return (await q(sb.from("profiles").select("role,full_name,student_no").eq("user_id", user.id).maybeSingle())) || fallback; }
-  catch { return fallback; }
+  const fallback = { role: meta.role === "student" ? "student" : "teacher", full_name: meta.full_name || "", student_no: meta.student_no || "", section: meta.section || "" };
+  try {
+    const row = await q(sb.from("profiles").select("role,full_name,student_no,section").eq("user_id", user.id).maybeSingle())
+      .catch(() => q(sb.from("profiles").select("role,full_name,student_no").eq("user_id", user.id).maybeSingle()));   // older database
+    return row ? { ...row, section: row.section || fallback.section } : fallback;
+  } catch { return fallback; }
 }
 
 const header = (right) => `<header class="home-top"><a class="brand" href="./">${LOGO} Afterclass</a><nav class="row">${right}</nav></header>`;
@@ -58,25 +61,38 @@ function landing(msg) {
       <div class="hero-copy">
         <span class="label">Quizzes · online tests · exam papers</span>
         <h1>Learn it in class. <mark>Prove it</mark> after.</h1>
-        <p class="lead">Teachers turn lesson notes into live quiz games, timed online tests and printed exams. Students join, play, and keep track of every score.</p>
+        <p class="lead">For Nigerian classrooms, from primary school to university. Teachers turn lesson notes into live quiz games, CBT tests and printed exams; students join, play and keep track of every score.</p>
         ${teacher ? `<p class="muted" style="margin:0">You're signed in as a teacher (${esc(user.email)}).</p>` : `<div class="row">
-          <button class="btn primary big" data-auth="up" data-role="student" type="button">I'm a student</button>
-          <button class="btn big" data-auth="up" data-role="teacher" type="button">I'm a teacher</button></div>
+          <button class="btn primary big" data-auth="up" data-role="teacher" type="button">I'm a teacher</button>
+          <button class="btn big" data-auth="up" data-role="student" type="button">I'm a student</button></div>
           <p class="muted" style="margin:0;font-size:14px">Already registered? <a href="#" data-auth="in">Sign in</a></p>`}
       </div>
       <div class="hero-side">${pinBox()}<p class="muted" style="margin:0;font-size:13px;text-align:center">Joining a game doesn't need an account.</p></div>
     </section>
-    <section class="roles">
-      <article class="role-card">
-        <span class="role-ic" aria-hidden="true">A</span><h2>For students</h2>
-        <ul><li>Join your teacher's class once with a class code</li><li>See every test and assignment your classes set</li><li>Jump into live games without typing your name</li><li>Track your scores over the term</li></ul>
-        ${teacher ? "" : `<div class="row"><button class="btn primary" data-auth="up" data-role="student" type="button">Register as a student</button><button class="btn ghost" data-auth="in" type="button">Sign in</button></div>`}
-      </article>
-      <article class="role-card">
-        <span class="role-ic t" aria-hidden="true">B</span><h2>For teachers</h2>
-        <ul><li>Upload notes (PDF, Word) and get questions written for you</li><li>Run live games, class teams, assignments and CBT tests</li><li>Print exam papers with your school heading</li><li>Class lists, marking and results in one place</li></ul>
-        ${teacher ? `<a class="btn primary" href="teacher/">Open your dashboard</a>` : `<div class="row"><button class="btn primary" data-auth="up" data-role="teacher" type="button">Register as a teacher</button><button class="btn ghost" data-auth="in" type="button">Sign in</button></div>`}
-      </article>
+    <section class="sections" aria-label="Choose your section">
+      <h2 class="sec-title">Built for every stage of school</h2>
+      <div class="sec-grid">
+        <article class="sec-card primary">
+          <span class="sec-badge primary">Primary</span>
+          <h3>Nursery &amp; primary schools</h3>
+          <ul><li>Class teams: play on the board, no phones needed</li><li>Big-picture games with read-aloud</li><li>Simple quizzes from your notes</li><li>Star charts and printable worksheets</li></ul>
+          <p class="muted" style="margin:0;font-size:14px">Pupils don't need accounts: they play as teams or join with a PIN.</p>
+          ${teacher ? "" : `<button class="btn primary" data-auth="up" data-role="teacher" data-sec="primary" type="button">Register as a primary teacher</button>`}
+        </article>
+        <article class="sec-card secondary">
+          <span class="sec-badge secondary">Secondary</span>
+          <h3>Junior &amp; senior secondary</h3>
+          <ul><li>Questions from notes, PDFs or a recorded lesson</li><li>CBT tests with timers and class lists</li><li>WAEC / NECO-style exam papers</li><li>Class codes, leaderboards and practice</li></ul>
+          ${teacher ? "" : `<div class="row"><button class="btn primary" data-auth="up" data-role="teacher" data-sec="secondary" type="button">I'm a teacher</button><button class="btn" data-auth="up" data-role="student" data-sec="secondary" type="button">I'm a student</button></div>`}
+        </article>
+        <article class="sec-card higher">
+          <span class="sec-badge higher">Higher</span>
+          <h3>Universities, polytechnics &amp; colleges</h3>
+          <ul><li>Courses with codes and matric numbers</li><li>Live lectures with polls and Q&amp;A</li><li>CA tests (CBT) and semester exam papers</li><li>Record a lecture, get questions after</li></ul>
+          ${teacher ? "" : `<div class="row"><button class="btn primary" data-auth="up" data-role="teacher" data-sec="higher" type="button">I'm a lecturer</button><button class="btn" data-auth="up" data-role="student" data-sec="higher" type="button">I'm a student</button></div>`}
+        </article>
+      </div>
+      ${teacher ? `<a class="btn primary" style="justify-self:start" href="teacher/">Open your dashboard</a>` : `<p class="muted" style="margin:0;font-size:14px">Already registered? <a href="#" data-auth="in">Sign in</a></p>`}
     </section>
     <section class="steps" aria-label="How it works">
       <div><b>1</b><h3>Teacher makes a quiz</h3><p class="muted">From notes, past questions or scratch.</p></div>
@@ -86,23 +102,32 @@ function landing(msg) {
     <footer class="home-foot"><span class="row" style="gap:6px 16px"><a href="help.html">Help &amp; guide</a><a href="#" data-fb>Report a problem</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a></span><span>Afterclass</span></footer>
   </div>`;
   bindPin();
-  app.querySelectorAll("[data-auth]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); authDialog(b.dataset.auth, b.dataset.role || "student"); }));
+  app.querySelectorAll("[data-auth]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); authDialog(b.dataset.auth, b.dataset.role || "student", b.dataset.sec || ""); }));
   $("#out")?.addEventListener("click", signOut);
 }
 
 async function signOut() { await sb.auth.signOut(); home(); }
 
 /* ================= sign in / register ================= */
-function authDialog(mode = "in", role = "student") {
+// Teachers pick their section (and, for higher education, the kind of institution);
+// students pick secondary or higher. Primary pupils don't register.
+const TEACHER_SECTIONS = [["primary", "Primary", "Nursery & primary"], ["secondary", "Secondary", "JSS & SSS"], ["higher", "Higher", "University, poly, college"]];
+const HIGHER_KINDS = [["university", "University"], ["polytechnic", "Polytechnic / monotechnic"], ["college", "College of Education or other college"], ["training", "Training / workshops"]];
+function authDialog(mode = "in", role = "student", sec = "") {
   const up = mode === "up", reset = mode === "reset", stu = role === "student";
+  if (up && stu && sec === "primary") sec = "";
   const d = dialog(`<form id="authForm" style="display:grid;gap:12px">
     <div class="spread"><h2 style="font-size:24px">${up ? (stu ? "Register as a student" : "Register as a teacher") : reset ? "Reset your password" : "Sign in"}</h2>
       <button class="btn ghost sm" type="button" data-x aria-label="Close">✕</button></div>
     ${up ? `<div class="seg" role="radiogroup" aria-label="I am a">
-        <button type="button" role="radio" aria-checked="${stu}" data-role="student">Student</button>
-        <button type="button" role="radio" aria-checked="${!stu}" data-role="teacher">Teacher</button></div>
+        <button type="button" role="radio" aria-checked="${!stu}" data-role="teacher">Teacher / lecturer</button>
+        <button type="button" role="radio" aria-checked="${stu}" data-role="student">Student</button></div>
+      <fieldset class="sec-pick"><legend class="label">${stu ? "Where do you study?" : "Where do you teach?"}</legend>
+        <div class="sec-pick-row">${(stu ? TEACHER_SECTIONS.slice(1) : TEACHER_SECTIONS).map(([k, l, sub]) => `<label class="sec-opt ${k}"><input type="radio" name="aSec" value="${k}" ${sec === k ? "checked" : ""} required><b>${l}</b><span>${sub}</span></label>`).join("")}</div>
+        ${stu ? `<small class="muted">Primary pupils don't need an account: they join games with a PIN.</small>` : ""}</fieldset>
+      ${!stu ? `<div class="field" id="kindWrap" ${sec === "higher" ? "" : "hidden"}><label class="label" for="aKind">Type of institution</label><select id="aKind">${HIGHER_KINDS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>` : ""}
       <div class="field"><label class="label" for="aName">Full name</label><input id="aName" type="text" maxlength="80" autocomplete="name" required placeholder="${stu ? "As your school has it, e.g. Okafor Adaeze" : "e.g. Mrs. Bello"}"></div>
-      ${stu ? `<div class="field"><label class="label" for="aNo">Admission / matric number <span style="text-transform:none;letter-spacing:0">(optional)</span></label><input id="aNo" type="text" maxlength="40" autocomplete="off"></div>` : ""}` : ""}
+      ${stu ? `<div class="field"><label class="label" for="aNo"><span id="aNoLabel">${sec === "higher" ? "Matric / registration number" : "Admission number"}</span> <span style="text-transform:none;letter-spacing:0">(optional)</span></label><input id="aNo" type="text" maxlength="40" autocomplete="off"></div>` : ""}` : ""}
     <div class="field"><label class="label" for="aEmail">Email</label><input id="aEmail" type="email" autocomplete="email" required></div>
     ${reset ? "" : `<div class="field"><label class="label" for="aPw">Password</label><input id="aPw" type="password" minlength="8" autocomplete="${up ? "new-password" : "current-password"}" required>${up ? `<small class="muted">At least 8 characters.</small>` : ""}</div>`}
     ${up ? `<label class="check" style="border:0;padding:0;align-items:flex-start"><input type="checkbox" id="aTerms"> <span style="font-size:14px">I agree to the <a href="terms.html" target="_blank" rel="noopener">terms of use</a> and <a href="privacy.html" target="_blank" rel="noopener">privacy notice</a>${stu ? ". If I am under 13, a parent or teacher knows I am using Afterclass." : "."}</span></label>` : ""}
@@ -113,7 +138,11 @@ function authDialog(mode = "in", role = "student") {
       : `<a href="#" data-mode="in">I already have an account</a>`}</div></form>`);
   d.querySelector("[data-x]").onclick = () => d.close();
   d.querySelectorAll("[data-mode]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); d.close(); authDialog(a.dataset.mode, role); }));
-  d.querySelectorAll(".seg [data-role]").forEach((b) => (b.onclick = () => { d.close(); authDialog("up", b.dataset.role); }));
+  d.querySelectorAll(".seg [data-role]").forEach((b) => (b.onclick = () => { d.close(); authDialog("up", b.dataset.role, sec); }));
+  d.querySelectorAll("[name=aSec]").forEach((r) => (r.onchange = () => {
+    if ($("#kindWrap", d)) $("#kindWrap", d).hidden = r.value !== "higher";
+    if ($("#aNoLabel", d)) $("#aNoLabel", d).textContent = r.value === "higher" ? "Matric / registration number" : "Admission number";
+  }));
   $("#authForm", d).onsubmit = async (e) => {
     e.preventDefault();
     const st = $("#aStatus", d), email = $("#aEmail", d).value.trim(), pw = $("#aPw", d)?.value;
@@ -127,7 +156,10 @@ function authDialog(mode = "in", role = "student") {
       } else if (up) {
         const full_name = $("#aName", d).value.trim().replace(/\s+/g, " ");
         if (full_name.length < 2) throw new Error("Enter your full name.");
-        const meta = { role, full_name, ...(stu ? { student_no: ($("#aNo", d)?.value || "").trim() } : {}) };
+        const chosen = d.querySelector("[name=aSec]:checked")?.value;
+        if (!chosen) throw new Error(stu ? "Choose where you study." : "Choose where you teach.");
+        const kind = chosen === "higher" ? $("#aKind", d)?.value || "university" : chosen;
+        const meta = { role, full_name, section: chosen, ...(stu ? { student_no: ($("#aNo", d)?.value || "").trim() } : { kind }) };
         const back = new URL(stu ? "./" : "teacher/", location.href).href;
         if (!$("#aTerms", d).checked) throw new Error("Please accept the terms of use to continue.");
         const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: meta, emailRedirectTo: back } });
@@ -152,12 +184,18 @@ function authDialog(mode = "in", role = "student") {
 }
 
 /* ================= student dashboard ================= */
+// Higher-education students have courses and matric numbers; secondary students have classes.
+const studentWords = () => (profile?.section === "higher"
+  ? { klass: "course", Klass: "Course", classes: "courses", number: "Matric / registration number", badge: "higher", Badge: "Higher" }
+  : { klass: "class", Klass: "Class", classes: "classes", number: "Admission number", badge: "secondary", Badge: "Secondary" });
+
 async function studentDash(msg = "") {
+  const sw = studentWords();
   const first = profile.full_name || user.email.split("@")[0];
   app.innerHTML = `<div class="home-wrap">
     ${header(`<span class="who-chip">${esc(profile.full_name || user.email)}</span><button class="btn ghost" id="out" type="button">Sign out</button>`)}
     ${msg ? `<div class="notice">${esc(msg)}</div>` : ""}
-    <div class="page-h"><div><span class="label">Student dashboard</span><h1>Hi, ${esc(first)}</h1></div></div>
+    <div class="page-h"><div><span class="label">Student dashboard <span class="sec-badge ${sw.badge}">${sw.Badge}</span></span><h1>Hi, ${esc(first)}</h1></div></div>
     <div class="stat-row" id="stats">${["Games & tests", "Average test score", "Practice runs", "To do"].map((l) => `<div class="stat"><span class="label">${l}</span><b>–</b></div>`).join("")}</div>
     <div class="dash">
       <div class="dash-main">
@@ -168,14 +206,14 @@ async function studentDash(msg = "") {
       </div>
       <aside class="dash-side">
         <section class="panel" id="lbPanel" hidden><div class="spread"><h2 class="h2">Leaderboard</h2><select id="lbClass" aria-label="Class" style="width:auto;max-width:60%"></select></div><div id="lb"></div></section>
-        <section class="panel"><h2 class="h2">My classes</h2><div id="classes"><p class="muted">Loading…</p></div>
+        <section class="panel"><h2 class="h2">My ${sw.classes}</h2><div id="classes"><p class="muted">Loading…</p></div>
           <form id="joinClass" style="display:grid;gap:10px;border-top:1px solid var(--line);padding-top:14px" autocomplete="off">
-            <div class="field"><label class="label" for="cCode">Join a class</label><input id="cCode" type="text" maxlength="12" placeholder="Class code from your teacher" required style="text-transform:uppercase;font-family:var(--f-mono);letter-spacing:.1em"></div>
-            <button class="btn primary" type="submit">Join class</button><p class="status" id="cStatus" role="status"></p></form></section>
+            <div class="field"><label class="label" for="cCode">Join a ${sw.klass}</label><input id="cCode" type="text" maxlength="12" placeholder="${sw.Klass} code from your ${sw.klass === "course" ? "lecturer" : "teacher"}" required style="text-transform:uppercase;font-family:var(--f-mono);letter-spacing:.1em"></div>
+            <button class="btn primary" type="submit">Join ${sw.klass}</button><p class="status" id="cStatus" role="status"></p></form></section>
         <section class="panel"><h2 class="h2">Profile</h2>
           <form id="prof" style="display:grid;gap:10px">
             <div class="field"><label class="label" for="pName">Full name</label><input id="pName" type="text" maxlength="80" required value="${esc(profile.full_name)}"></div>
-            <div class="field"><label class="label" for="pNo">Admission / matric number</label><input id="pNo" type="text" maxlength="40" value="${esc(profile.student_no)}"></div>
+            <div class="field"><label class="label" for="pNo">${sw.number}</label><input id="pNo" type="text" maxlength="40" value="${esc(profile.student_no)}"></div>
             <div class="row"><button class="btn" type="submit">Save</button><span class="muted" style="font-size:13px">${esc(user.email)}</span></div></form></section>
       </aside>
     </div>
@@ -225,7 +263,7 @@ async function loadDash() {
   $("#todo").innerHTML = d.todo.length ? `<ul class="todo">${d.todo.map((t) => `<li>
       <div><b>${esc(t.title)}</b><div class="muted" style="font-size:13px">${esc(t.class)} · ${t.kind === "live" ? `<span class="chip live">LIVE NOW</span>` : `${t.timed ? "Timed test" : "Assignment"} · ${t.questions} questions${t.closes_at ? ` · due ${esc(fmtDate(t.closes_at))}` : ""}`}</div></div>
       <button class="btn primary sm" data-pin="${esc(t.pin)}" type="button">${t.kind === "live" ? "Join" : "Start"}</button></li>`).join("")}</ul>`
-    : `<p class="muted" style="margin:0">${d.classes.length ? "Nothing due. When your teacher sets a test for your class it shows up here." : "Join your class with the code from your teacher, and tests they set will show up here."}</p>`;
+    : `<p class="muted" style="margin:0">${d.classes.length ? `Nothing due. When a test is set for your ${studentWords().klass} it shows up here.` : `Join your ${studentWords().klass} with the code from your ${studentWords().klass === "course" ? "lecturer" : "teacher"}, and tests they set will show up here.`}</p>`;
   $("#todo").onclick = (e) => { const b = e.target.closest("[data-pin]"); if (b) hooks.joinAs(b.dataset.pin, profile.full_name); };
 
   $("#hist").innerHTML = d.history.length ? `<div class="scroll-x"><table class="data"><thead><tr><th>Quiz</th><th>Type</th><th>Result</th><th>When</th></tr></thead><tbody>
@@ -235,11 +273,11 @@ async function loadDash() {
 
   $("#classes").innerHTML = d.classes.length ? `<ul class="todo">${d.classes.map((c) => `<li><div><b>${esc(c.name)}</b><div class="muted" style="font-size:13px">${esc(c.teacher)} · No. ${esc(c.student_no)}</div></div>
       <button class="btn ghost sm danger" data-leave="${c.id}" data-name="${esc(c.name)}" type="button">Leave</button></li>`).join("")}</ul>`
-    : `<p class="muted" style="margin:0">You haven't joined a class yet.</p>`;
+    : `<p class="muted" style="margin:0">You haven't joined a ${studentWords().klass} yet.</p>`;
   $("#classes").onclick = async (e) => {
     const b = e.target.closest("[data-leave]"); if (!b) return;
-    if (!(await ask(`Leave ${b.dataset.name}? Your past results stay with your teacher.`, "Leave class", true))) return;
-    try { await rpc("leave_class", { p_class: b.dataset.leave }); toast("Left the class"); loadDash(); } catch (err) { toast(err.message, true); }
+    if (!(await ask(`Leave ${b.dataset.name}? Your past results stay with your teacher.`, `Leave ${studentWords().klass}`, true))) return;
+    try { await rpc("leave_class", { p_class: b.dataset.leave }); toast(`Left the ${studentWords().klass}`); loadDash(); } catch (err) { toast(err.message, true); }
   };
 }
 

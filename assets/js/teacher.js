@@ -67,6 +67,7 @@ function renderAuth(mode = "in") {
     <div><h1 style="font-size:28px">${mode === "up" ? "Create your account" : mode === "reset" ? "Reset your password" : "Teacher sign in"}</h1>
     <p class="muted" style="margin:6px 0 0">${mode === "reset" ? "We'll email you a link to choose a new password." : `For teachers, lecturers and presenters. Students register on the <a href="../">home page</a>, or just join a game with its PIN.`}</p></div>
     <form id="authForm" style="display:grid;gap:12px">
+      ${mode === "up" ? `<div class="field"><label class="label" for="kindPick">Where do you teach?</label><select id="kindPick" required><option value="">Choose…</option><option value="primary">Nursery / primary school</option><option value="secondary">Secondary school (JSS / SSS)</option><option value="university">University</option><option value="polytechnic">Polytechnic / monotechnic</option><option value="college">College of Education or other college</option><option value="training">Training / workshops</option></select></div>` : ""}
       ${mode === "up" ? `<div class="field"><label class="label" for="fullName">Full name</label><input id="fullName" type="text" maxlength="80" autocomplete="name" required placeholder="e.g. Mrs. Bello"></div>` : ""}
       <div class="field"><label class="label" for="email">Email</label><input id="email" type="email" autocomplete="email" required></div>
       ${mode === "reset" ? "" : `<div class="field"><label class="label" for="pw">Password</label><input id="pw" type="password" minlength="8" autocomplete="${mode === "up" ? "new-password" : "current-password"}" required></div>`}
@@ -86,7 +87,7 @@ function renderAuth(mode = "in") {
       if (mode === "in") { const { error } = await sb.auth.signInWithPassword({ email, password: pw }); if (error) throw error; }
       else if (mode === "up") {
         if (!$("#terms").checked) throw new Error("Please accept the terms of use to continue.");
-        const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { role: "teacher", full_name: $("#fullName").value.trim() }, emailRedirectTo: location.href.split("#")[0] } });
+        const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { role: "teacher", full_name: $("#fullName").value.trim(), kind: $("#kindPick").value, section: { primary: "primary", secondary: "secondary" }[$("#kindPick").value] || "higher" }, emailRedirectTo: location.href.split("#")[0] } });
         if (error) throw error;
         if (!data.session) { st.textContent = "Check your email and click the confirmation link, then sign in."; return; }
       } else {
@@ -119,6 +120,13 @@ async function route() {
   currentHash = location.hash;
   if (!ctx.head) { ctx.head = await loadHeader().catch(() => ({ profile: { kind: "secondary" } })); autoPurge(); }
   if (ctx.isAdmin === undefined) ctx.isAdmin = await rpc("is_app_admin", {}).catch(() => false);
+  // The section chosen at sign-up (primary / secondary / university…) sets up the dashboard.
+  // Teachers who registered before sections existed are asked once, on Home.
+  if (!ctx.head.school && !ctx.head.profile?.owner_id && ctx.needSection === undefined) {
+    const k = ctx.user.user_metadata?.kind;
+    ctx.needSection = !k;
+    if (k) { try { await q(sb.from("school_profiles").upsert({ owner_id: ctx.user.id, kind: k })); ctx.head = await loadHeader(); } catch { ctx.needSection = true; } }
+  }
   if (await isStudent()) return renderStudentAccount();
   const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");
@@ -135,7 +143,7 @@ async function route() {
     if (page === "reviews") return await (await report()).reviewsView();
     if (page === "review") return await (await report()).reviewView(id);
     if (page === "school") { await schoolView(frame); ctx.head = await loadHeader(); return; }
-    if (page === "quizzes") return await quizzesView();
+    if (page === "quizzes") return await quizzesView(query);
     if (page === "admin" && ctx.isAdmin) return await (await import("./admin.js")).adminView();
     return await overviewView();
   } catch (e) { frame("", `<div class="notice">${esc(e.message)}</div>`); }
@@ -169,7 +177,7 @@ async function autoPurge() {
 }
 
 /* ================= quizzes list ================= */
-async function quizzesView() {
+async function quizzesView(query = "") {
   const w = words();
   const v = frame("quizzes", `<div class="page-h"><div><span class="label">Your library</span><h1>Quizzes</h1></div>
     <div class="row"><details class="menu"><summary class="btn primary big">+ New quiz ▾</summary><div class="menu-list" style="right:0;left:auto">
@@ -190,6 +198,11 @@ async function quizzesView() {
     return;
   }
   const inSchool = !!ctx.head?.school;
+  // The main button follows the section (Primary: class teams) or the quick action that sent the teacher here.
+  const sec = ctx.section, pick = new URLSearchParams(query).get("pick");
+  const mainAct = ["live", "teams", "assign", "print"].includes(pick) ? pick : sec === "primary" ? "teams" : "live";
+  const ACT_LABEL = { live: sec === "higher" ? "▶ Live lecture" : "▶ Play live", teams: "Class teams", assign: sec === "higher" ? "Set CA test" : sec === "primary" ? "Set homework quiz" : "Set CBT test", print: sec === "primary" ? "Print worksheet" : "Print exam" };
+  if (pick && ACT_LABEL[pick]) box.insertAdjacentHTML("beforebegin", `<div class="notice pick-note">Choose the quiz to <b>${{ live: sec === "higher" ? "use in a live lecture" : "play live", teams: "play as class teams", assign: sec === "higher" ? "set as a CA test" : "set as a test", print: sec === "primary" ? "print as a worksheet" : "print as an exam paper" }[pick]}</b>. <a href="#/quizzes">Cancel</a></div>`);
   box.innerHTML = `<div class="grid-cards">${list.map((z) => {
     const c = { mcq: 0, tf: 0, short: 0, poll: 0, word: 0 }; z.questions.forEach((x) => c[x.type]++);
     const fix = z.questions.filter((x) => x.needsAnswer).length;
@@ -199,11 +212,13 @@ async function quizzesView() {
       ${z.review_status === "changes" && z.review_note ? `<div class="notice" style="padding:6px 10px;font-size:13px"><b>HOD:</b> ${esc(z.review_note)}</div>` : ""}
       <div class="meta">Edited ${fmtDate(z.updated_at)}</div>
       <div class="actions">
-        <button class="btn sm primary" data-act="live" type="button" title="${w.Learners} join on their phones with a PIN; leaderboard after each question">▶ Play live</button>
+        <button class="btn sm primary" data-act="${mainAct}" type="button">${ACT_LABEL[mainAct]}</button>
+        ${sec === "primary" && mainAct !== "live" ? `<button class="btn sm" data-act="live" type="button">${ACT_LABEL.live}</button>` : ""}
         <details class="menu"><summary class="btn sm">More ways ▾</summary><div class="menu-list">
+          <button data-act="live" type="button"><b>${sec === "higher" ? "Live lecture" : "Live game"}</b><span>${w.Learners} join on their phones with a PIN${sec === "primary" ? "; questions can be read aloud" : sec === "higher" ? "; polls and Q&amp;A" : "; leaderboard after each question"}</span></button>
           <button data-act="teams" type="button"><b>Class teams (no phones)</b><span>Show on the board; you score the teams</span></button>
-          <button data-act="assign" type="button"><b>Assignment / online test</b><span>Self-paced, with optional timer and class list</span></button>
-          <a href="#/print/${z.id}"><b>Print exam paper</b><span>PDF or Word, with your school heading</span></a>
+          <button data-act="assign" type="button"><b>${sec === "primary" ? "Homework quiz" : sec === "higher" ? "CA test / online assignment" : "CBT test / assignment"}</b><span>Self-paced, with optional timer and ${w.klass} list</span></button>
+          <a href="#/print/${z.id}"><b>${sec === "primary" ? "Print worksheet" : sec === "higher" ? "Print exam paper" : "Print exam paper"}</b><span>PDF or Word, with your ${sec === "higher" ? "faculty" : "school"} heading</span></a>
           <a href="../index.html?preview=${z.id}" target="_blank" rel="noopener"><b>Try it as a ${w.learner}</b><span>Opens a preview; nothing is saved</span></a>
         </div></details>
         <a class="btn sm" href="#/edit/${z.id}">Edit</a>
@@ -221,6 +236,7 @@ async function quizzesView() {
       if (b.dataset.act === "live") return hostDialog(z);
       if (b.dataset.act === "teams") return teamsDialog(z);
       if (b.dataset.act === "assign") return assignDialog(z);
+      if (b.dataset.act === "print") { location.hash = "#/print/" + z.id; return; }
       if (b.dataset.act === "review") { await rpc("submit_for_review", { p_quiz: z.id }); toast("Sent to your HOD for review"); return quizzesView(); }
       if (b.dataset.act === "dup") { await q(sb.from("quizzes").insert({ title: z.title + " (copy)", questions: z.questions })); toast("Duplicated"); return quizzesView(); }
       if (b.dataset.act === "del" && await ask(`Delete "${z.title}"? Past results stay under Results.`, "Delete quiz", true)) {
@@ -271,6 +287,7 @@ async function hostDialog(z) {
   $("#hHide", d).checked = kind === "primary";
   $("#hRead", d).checked = kind === "primary";
   $("#hAud", d).value = kind === "training" ? "webinar" : "class";
+  $("#hQa", d).checked = ctx.section === "higher";   // lectures: questions from the floor
   const sync = () => { const web = $("#hAud", d).value === "webinar"; $("#hQa", d).checked ||= web; $("#hEmail", d).closest("label").hidden = !web; if (!web) $("#hEmail", d).checked = false; };
   $("#hAud", d).onchange = sync; sync();
   classOptions().then((o) => ($("#hClass", d).innerHTML = o)).catch(() => {});

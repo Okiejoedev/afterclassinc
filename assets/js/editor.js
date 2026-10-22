@@ -50,14 +50,14 @@ export async function editorView(id, opts = {}) {
         <div class="opts">
           <div class="field"><label class="label" for="count">Questions</label><select id="count">${[5, 10, 15, 20, 30, 40, 50, 60].map((n) => `<option ${n === 10 ? "selected" : ""}>${n}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="level">Level</label><select id="level">${LEVELS.map(([k, l]) => `<option value="${k}" ${k === defLevel ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-          <div class="field"><label class="label" for="difficulty">Difficulty</label><select id="difficulty">${DIFFICULTY.map(([k, l]) => `<option value="${k}" ${k === "mixed" ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+          <div class="field"><label class="label" for="difficulty">Difficulty</label><select id="difficulty">${DIFFICULTY.map(([k, l]) => `<option value="${k}" ${k === (ctx.section === "primary" ? "easy" : "mixed") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="language">Language</label><select id="language">${LANGUAGES.map((l) => `<option>${l}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="engine">Writer</label><select id="engine">${AI_ENABLED ? `<option value="ai">AI (best quality)</option>` : ""}<option value="basic">Built-in (free, simple)</option></select></div>
         </div>
         <div class="field"><span class="label">Question types</span><div class="checks">
           <label class="check"><input type="checkbox" id="tMcq" checked> Multiple choice</label>
           <label class="check"><input type="checkbox" id="tTf" checked> True / False</label>
-          <label class="check"><input type="checkbox" id="tShort" checked> Written / theory</label>
+          <label class="check"><input type="checkbox" id="tShort" ${ctx.section === "primary" ? "" : "checked"}> Written / theory</label>
         </div></div>
         ${AI_ENABLED ? "" : `<p class="muted" style="margin:0;font-size:13px">The built-in writer asks exam-style questions about what your notes state: definitions, lists, functions, stages, reasons and facts (direct and best-answer questions, NOT questions, matching, correct order, assertion–reason, and structured theory questions with marks). For questions that apply ideas to new situations, other languages and maths, turn on the AI writer (README step 7).</p>`}
         <label class="check" id="appendWrap" style="justify-self:start" hidden><input type="checkbox" id="append"> Add to the current questions instead of replacing them</label>

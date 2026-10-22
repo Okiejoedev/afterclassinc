@@ -34,6 +34,9 @@ function defaults(quiz, kind) {
     instrA: "Answer ALL questions in this section. Choose the correct option from the options lettered A to D.",
     instrBExtra: "", answerAny: 0, marksA: 1, marksB: 10,
     candidate: true, omr: true, key: true, cover: uni, lines: 0, versions: 1, fontSize: 12, closing: uni ? "" : "GOOD LUCK!",
+    // Primary: a worksheet-style test, larger print, no answer sheet, space to write.
+    ...(kind === "primary" ? { title: "Class Test", duration: "40 minutes", omr: false, fontSize: 14, lines: 3, closing: "Well done!",
+      instrGeneral: "Write your name and class. Read each question carefully.", instrA: "Circle the correct answer.", headB: "Section B: Answer these questions" } : {}),
   };
 }
 

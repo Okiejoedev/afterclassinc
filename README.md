@@ -16,6 +16,11 @@ The website is plain HTML/JS with no build step. GitHub Pages hosts the files an
 
 ## What it does
 
+**Three sections, each with its own tools** (chosen at registration; the whole app uses an Adire indigo, ochre and earth look)
+- **Primary**: no pupil accounts. Class teams on the board come first, there is a star chart per class with a new-term reset, easy questions, and a short printed Class Test. Class codes and leaderboards are hidden.
+- **Secondary**: student accounts, class codes, live games, CBT tests, class leaderboard, practice, WAEC/NECO-style papers.
+- **Higher** (university, polytechnic, college of education, training): courses instead of classes, matric numbers, audience Q&A on by default, course codes on the dashboard.
+
 **Making questions**
 - Upload one or many PDFs / Word files / text notes (a whole term for an exam), or paste notes.
 - Writers: built-in (free, simple fill-in-the-blank) or AI (exam quality, reading levels from Primary 1 to university, English / French / Hausa / Igbo / Yoruba / Pidgin, reads scanned PDFs). Each AI question says which page it came from.

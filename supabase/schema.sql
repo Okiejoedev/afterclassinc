@@ -109,6 +109,10 @@ alter table public.classes alter column join_code set default upper(substr(md5(r
 create unique index if not exists classes_join_code_idx on public.classes (join_code);
 alter table public.students add column if not exists user_id uuid references auth.users(id) on delete set null;
 create unique index if not exists students_user_idx on public.students (class_id, user_id) where user_id is not null;
+-- Primary classes: the teacher's star chart.
+alter table public.students add column if not exists stars int not null default 0 check (stars between 0 and 9999);
+-- Students say whether they are in secondary school or higher education.
+alter table public.profiles add column if not exists section text not null default '' check (section in ('', 'primary', 'secondary', 'higher'));
 -- Teachers can hide the class leaderboard from students.
 alter table public.classes add column if not exists leaderboard boolean not null default true;
 
@@ -1002,12 +1006,18 @@ end $$;
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  insert into profiles (user_id, role, full_name, student_no)
+  insert into profiles (user_id, role, full_name, student_no, section)
   values (new.id,
           case when new.raw_user_meta_data ->> 'role' = 'student' then 'student' else 'teacher' end,
           left(trim(coalesce(new.raw_user_meta_data ->> 'full_name', '')), 80),
-          left(trim(coalesce(new.raw_user_meta_data ->> 'student_no', '')), 40))
+          left(trim(coalesce(new.raw_user_meta_data ->> 'student_no', '')), 40),
+          case when new.raw_user_meta_data ->> 'section' in ('primary', 'secondary', 'higher') then new.raw_user_meta_data ->> 'section' else '' end)
   on conflict (user_id) do nothing;
+  -- A teacher's section (primary / secondary / university…) sets up their dashboard.
+  if new.raw_user_meta_data ->> 'role' is distinct from 'student'
+     and new.raw_user_meta_data ->> 'kind' in ('primary', 'secondary', 'university', 'polytechnic', 'college', 'training') then
+    insert into school_profiles (owner_id, kind) values (new.id, new.raw_user_meta_data ->> 'kind') on conflict (owner_id) do nothing;
+  end if;
   return new;
 end $$;
 drop trigger if exists on_auth_user_created on auth.users;
