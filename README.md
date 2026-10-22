@@ -246,6 +246,8 @@ The `local-demo` folder (next to this one, not uploaded to GitHub) runs the whol
 
 ## Running the MVP
 
+**Admin console** (Teacher dashboard → Admin, only for accounts in `app_admins`): every account by section with search, each person's quizzes, classes, games and tests, every school account, the latest activity, problem reports, moving an account to another section, and giving or removing admin access.
+
 **Before launch:** work through [TESTING.md](TESTING.md) with three phones.
 
 **Your admin page.** In Supabase → SQL Editor, run this once with your own email:

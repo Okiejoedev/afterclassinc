@@ -445,6 +445,39 @@ end $$;
 -- =====================================================================
 -- SCHOOL ACCOUNTS
 -- =====================================================================
+-- Sections: every account belongs to one of Primary, Secondary or Higher, set at
+-- registration. A teacher's section comes from their institution type (school
+-- account first, else their own profile); a student's is stored on profiles.
+create or replace function public._section_of(k text) returns text language sql immutable as $$
+  select case when k = 'primary' then 'primary' when k = 'secondary' then 'secondary'
+              when k in ('university', 'polytechnic', 'college', 'training') then 'higher' else '' end $$;
+create or replace function public._kind_of(p_user uuid) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce((select s.kind from school_members m join schools s on s.id = m.school_id where m.user_id = p_user),
+                  (select kind from school_profiles where owner_id = p_user), '') $$;
+create or replace function public._user_section(p_user uuid) returns text
+language sql stable security definer set search_path = public as $$
+  select case when (select role from profiles where user_id = p_user) = 'student'
+              then coalesce((select section from profiles where user_id = p_user), '')
+              else public._section_of(public._kind_of(p_user)) end $$;
+create or replace function public._section_name(s text) returns text language sql immutable as $$
+  select case s when 'primary' then 'Primary' when 'secondary' then 'Secondary' when 'higher' then 'Higher' else 'another' end $$;
+
+-- Teachers can change their institution type only within their own section
+-- (a university can become a polytechnic, not a primary school). The site owner can move anyone.
+create or replace function public._keep_section() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public._section_of(old.kind) <> public._section_of(new.kind) and auth.uid() is not null and not public.is_app_admin() then
+    raise exception 'This account is in the % section and can''t be moved to another section. Use "Report a problem" if it was registered in the wrong one.', public._section_name(public._section_of(old.kind));
+  end if;
+  return new;
+end $$;
+drop trigger if exists keep_section on public.school_profiles;
+create trigger keep_section before update of kind on public.school_profiles for each row execute function public._keep_section();
+drop trigger if exists keep_section on public.schools;
+create trigger keep_section before update of kind on public.schools for each row execute function public._keep_section();
+
 create or replace function public.create_school(p_name text, p_kind text default 'secondary', p_display_name text default '')
 returns public.schools language plpgsql security definer set search_path = public as $$
 declare sc schools; pr school_profiles;
@@ -452,6 +485,9 @@ begin
   if auth.uid() is null then raise exception 'Sign in first.'; end if;
   if exists (select 1 from school_members where user_id = auth.uid()) then raise exception 'You are already in a school account. Leave it first.'; end if;
   if length(trim(coalesce(p_name, ''))) < 3 then raise exception 'Enter the school name.'; end if;
+  if public._kind_of(auth.uid()) <> '' and public._section_of(public._kind_of(auth.uid())) <> public._section_of(coalesce(nullif(p_kind, ''), 'secondary')) then
+    raise exception 'Your account is in the % section, so the school account must be in it too.', public._section_name(public._section_of(public._kind_of(auth.uid())));
+  end if;
   select * into pr from school_profiles where owner_id = auth.uid();
   insert into schools (name, kind, address, motto, contact, logo)
   values (trim(p_name), coalesce(nullif(p_kind, ''), 'secondary'), coalesce(pr.address, ''), coalesce(pr.motto, ''), coalesce(pr.contact, ''), pr.logo)
@@ -470,6 +506,10 @@ begin
   if exists (select 1 from school_members where user_id = auth.uid()) then raise exception 'You are already in a school account. Leave it first.'; end if;
   select * into sc from schools where join_code = upper(trim(coalesce(p_code, '')));
   if not found then raise exception 'That school code is not correct. Ask your school admin for it.'; end if;
+  if public._kind_of(auth.uid()) <> '' and public._section_of(public._kind_of(auth.uid())) <> public._section_of(sc.kind) then
+    raise exception 'That code is for a school account in the % section, but your account is in the % section.',
+      public._section_name(public._section_of(sc.kind)), public._section_name(public._section_of(public._kind_of(auth.uid())));
+  end if;
   insert into school_members (school_id, user_id, role, department, display_name, email)
   values (sc.id, auth.uid(), 'teacher', trim(coalesce(p_department, '')), trim(coalesce(p_display_name, '')),
           coalesce((select email from auth.users where id = auth.uid()), ''));
@@ -1038,6 +1078,14 @@ begin
     insert into join_attempts (ip) values (public._client_ip());
     raise exception 'No class with that code. Check it with your teacher.';
   end if;
+  -- Sections stay apart: primary classes have no student accounts, and secondary and higher don't mix.
+  if public._section_of(public._kind_of(c.owner_id)) = 'primary' then
+    raise exception 'That code is for a primary school class. Primary pupils don''t need accounts: the teacher runs the games in class.';
+  end if;
+  if coalesce(pr.section, '') <> '' and public._section_of(public._kind_of(c.owner_id)) not in ('', pr.section) then
+    raise exception 'That code is for a class in the % section, but your account is in the % section. Check the code with your teacher.',
+      public._section_name(public._section_of(public._kind_of(c.owner_id))), public._section_name(pr.section);
+  end if;
   if exists (select 1 from students where class_id = c.id and user_id = auth.uid()) then
     return json_build_object('class_id', c.id, 'name', c.name, 'already', true);
   end if;
@@ -1266,6 +1314,140 @@ begin
   update feedback set handled = p_done where id = p_id;
 end $$;
 
+-- ---------- Admin console: read everything, move accounts between sections ----------
+-- Totals per section for the overview.
+create or replace function public.admin_sections() returns json
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return (select coalesce(json_object_agg(sec, json_build_object('teachers', t, 'students', s, 'quizzes', qz, 'sessions', ss)), '{}'::json) from (
+    select coalesce(nullif(x.sec, ''), 'unset') sec,
+           count(*) filter (where x.role <> 'student') t, count(*) filter (where x.role = 'student') s,
+           sum(x.qz) qz, sum(x.ss) ss
+    from (select coalesce(p.role, 'teacher') role, public._user_section(u.id) sec,
+                 (select count(*) from quizzes where owner_id = u.id) qz, (select count(*) from sessions where owner_id = u.id) ss
+          from auth.users u left join profiles p on p.user_id = u.id) x
+    group by 1) y);
+end $$;
+
+-- Everyone who has an account, newest first, with a search and section / role filters.
+create or replace function public.admin_people(p_q text default '', p_section text default '', p_role text default '', p_limit int default 300)
+returns json language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return (select coalesce(json_agg(r order by r.created_at desc), '[]'::json) from (
+    select u.id, u.email, u.created_at, u.last_sign_in_at, u.email_confirmed_at is not null as confirmed,
+           coalesce(p.role, 'teacher') as role, coalesce(nullif(p.full_name, ''), u.raw_user_meta_data->>'full_name', '') as name,
+           p.student_no, public._user_section(u.id) as section, public._kind_of(u.id) as kind,
+           (select s.name from school_members m join schools s on s.id = m.school_id where m.user_id = u.id) as school,
+           (select count(*) from quizzes where owner_id = u.id) as quizzes,
+           (select count(*) from classes where owner_id = u.id) as classes,
+           (select count(*) from sessions where owner_id = u.id) as sessions,
+           (select count(*) from students where user_id = u.id) as joined,
+           exists (select 1 from app_admins a where a.user_id = u.id) as is_admin
+    from auth.users u left join profiles p on p.user_id = u.id
+    where (coalesce(p_q, '') = '' or u.email ilike '%' || p_q || '%' or p.full_name ilike '%' || p_q || '%' or p.student_no ilike '%' || p_q || '%')
+      and (coalesce(p_role, '') = '' or coalesce(p.role, 'teacher') = p_role)
+      and (coalesce(p_section, '') = '' or public._user_section(u.id) = p_section or (p_section = 'unset' and public._user_section(u.id) = ''))
+    order by u.created_at desc limit least(greatest(coalesce(p_limit, 300), 1), 1000)) r);
+end $$;
+
+-- One person in full: their quizzes, classes, games and tests, the classes they joined, their reports.
+create or replace function public.admin_person(p_user uuid) returns json
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return json_build_object(
+    'person', (select row_to_json(r) from (select u.id, u.email, u.created_at, u.last_sign_in_at, u.email_confirmed_at is not null as confirmed,
+                 coalesce(p.role, 'teacher') as role, coalesce(nullif(p.full_name, ''), u.raw_user_meta_data->>'full_name', '') as name, p.student_no,
+                 public._user_section(u.id) as section, public._kind_of(u.id) as kind,
+                 exists (select 1 from app_admins a where a.user_id = u.id) as is_admin
+               from auth.users u left join profiles p on p.user_id = u.id where u.id = p_user) r),
+    'school', (select row_to_json(r) from (select s.id, s.name, s.kind, m.role, m.department from school_members m join schools s on s.id = m.school_id where m.user_id = p_user) r),
+    'profile', (select row_to_json(r) from (select name, address, kind from school_profiles where owner_id = p_user) r),
+    'quizzes', (select coalesce(json_agg(r order by r.updated_at desc), '[]'::json) from (
+        select id, title, jsonb_array_length(questions) as n, review_status, created_at, updated_at from quizzes where owner_id = p_user) r),
+    'classes', (select coalesce(json_agg(r order by r.created_at desc), '[]'::json) from (
+        select c.id, c.name, c.join_code, c.created_at, (select count(*) from students s where s.class_id = c.id) as students from classes c where c.owner_id = p_user) r),
+    'sessions', (select coalesce(json_agg(r order by r.created_at desc), '[]'::json) from (
+        select s.id, s.title, s.kind, s.status, s.created_at, (select count(*) from players pl where pl.session_id = s.id) as players
+        from sessions s where s.owner_id = p_user order by s.created_at desc limit 100) r),
+    'joined', (select coalesce(json_agg(r), '[]'::json) from (
+        select c.name, st.student_no, u.email as teacher from students st join classes c on c.id = st.class_id left join auth.users u on u.id = c.owner_id
+        where st.user_id = p_user) r),
+    'practice', (select count(*) from practice_runs where user_id = p_user),
+    'feedback', (select coalesce(json_agg(r order by r.created_at desc), '[]'::json) from (select message, created_at, handled from feedback where user_id = p_user) r));
+end $$;
+
+-- Read any quiz (questions and the notes it was made from).
+create or replace function public.admin_quiz(p_id uuid) returns json
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return (select row_to_json(r) from (select q.id, q.title, q.questions, q.notes, q.review_status, q.created_at, q.updated_at,
+            q.owner_id, u.email as owner_email from quizzes q left join auth.users u on u.id = q.owner_id where q.id = p_id) r);
+end $$;
+
+-- School accounts with their members.
+create or replace function public.admin_schools() returns json
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return (select coalesce(json_agg(r order by r.created_at desc), '[]'::json) from (
+    select s.id, s.name, s.kind, public._section_of(s.kind) as section, s.created_at, s.join_code, s.require_approval,
+           (select coalesce(json_agg(json_build_object('user_id', m.user_id, 'email', m.email, 'name', m.display_name, 'role', m.role, 'department', m.department) order by m.role, m.email), '[]'::json)
+              from school_members m where m.school_id = s.id) as members,
+           (select count(*) from quizzes q where q.school_id = s.id) as quizzes
+    from schools s) r);
+end $$;
+
+-- What's happening: the latest games, tests and quizzes across the site.
+create or replace function public.admin_activity(p_limit int default 100) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare n int := least(greatest(coalesce(p_limit, 100), 1), 500);
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can see this.'; end if;
+  return json_build_object(
+    'sessions', (select coalesce(json_agg(r order by r.created_at desc), '[]'::json) from (
+        select s.id, s.title, s.kind, s.status, s.created_at, s.owner_id, u.email as owner_email, public._user_section(s.owner_id) as section,
+               (select name from classes c where c.id = s.class_id) as class_name,
+               (select count(*) from players pl where pl.session_id = s.id) as players
+        from sessions s left join auth.users u on u.id = s.owner_id order by s.created_at desc limit n) r),
+    'quizzes', (select coalesce(json_agg(r order by r.updated_at desc), '[]'::json) from (
+        select q.id, q.title, jsonb_array_length(q.questions) as n, q.updated_at, q.owner_id, u.email as owner_email, public._user_section(q.owner_id) as section
+        from quizzes q left join auth.users u on u.id = q.owner_id order by q.updated_at desc limit n) r));
+end $$;
+
+-- Move a teacher to another institution type (any section), or a student between Secondary and Higher.
+create or replace function public.admin_set_kind(p_user uuid, p_kind text) returns void
+language plpgsql security definer set search_path = public as $$
+declare sid uuid;
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can do this.'; end if;
+  if (select role from profiles where user_id = p_user) = 'student' then
+    if p_kind not in ('secondary', 'higher') then raise exception 'Students are in Secondary or Higher.'; end if;
+    update profiles set section = p_kind where user_id = p_user;
+    return;
+  end if;
+  if public._section_of(p_kind) = '' then raise exception 'Unknown institution type.'; end if;
+  select school_id into sid from school_members where user_id = p_user;
+  if sid is not null then update schools set kind = p_kind where id = sid; end if;
+  insert into school_profiles (owner_id, kind) values (p_user, p_kind) on conflict (owner_id) do update set kind = excluded.kind;
+  update profiles set section = public._section_of(p_kind) where user_id = p_user;
+end $$;
+
+-- Give or take away access to this console. The last admin can't remove themselves.
+create or replace function public.admin_set_admin(p_user uuid, p_on boolean) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the site owner can do this.'; end if;
+  if p_on then insert into app_admins (user_id) values (p_user) on conflict do nothing;
+  else
+    if (select count(*) from app_admins) <= 1 then raise exception 'There must be at least one admin.'; end if;
+    delete from app_admins where user_id = p_user;
+  end if;
+end $$;
+
 -- =====================================================================
 -- PERMISSIONS
 -- =====================================================================
@@ -1290,12 +1472,14 @@ begin
     'public.submit_for_review(uuid)', 'public.review_quiz(uuid, text, text)',
     'public.join_class(text, text)', 'public.leave_class(uuid)', 'public.student_home()',
     'public.practice_quiz(uuid)', 'public.class_leaderboard(uuid)', 'public.teacher_week()',
-    'public.is_app_admin()', 'public.admin_stats()', 'public.admin_feedback_done(bigint, boolean)'] loop
+    'public.is_app_admin()', 'public.admin_stats()', 'public.admin_feedback_done(bigint, boolean)',
+    'public.admin_sections()', 'public.admin_people(text, text, text, int)', 'public.admin_person(uuid)', 'public.admin_quiz(uuid)',
+    'public.admin_schools()', 'public.admin_activity(int)', 'public.admin_set_kind(uuid, text)', 'public.admin_set_admin(uuid, boolean)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
   -- internal helpers are not callable from the website
-  foreach f in array array['public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()', 'public._practice_open(public.sessions, public.players)',
+  foreach f in array array['public._kind_of(uuid)', 'public._user_section(uuid)', 'public._keep_section()', 'public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()', 'public._practice_open(public.sessions, public.players)',
     'public._assignment_results(public.players, public.sessions)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;

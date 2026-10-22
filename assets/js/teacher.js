@@ -127,6 +127,8 @@ async function route() {
     ctx.needSection = !k;
     if (k) { try { await q(sb.from("school_profiles").upsert({ owner_id: ctx.user.id, kind: k })); ctx.head = await loadHeader(); } catch { ctx.needSection = true; } }
   }
+  // The site owner's console opens for admins whatever kind of account they registered.
+  if (ctx.isAdmin && location.hash.startsWith("#/admin")) return await (await import("./admin.js")).adminView().catch((e) => frame("admin", `<div class="notice">${esc(e.message)}</div>`));
   if (await isStudent()) return renderStudentAccount();
   const [, pageRaw = "", id] = (location.hash || "#/home").split("/");
   const [page, query = ""] = pageRaw.split("?");

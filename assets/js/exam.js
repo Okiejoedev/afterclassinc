@@ -168,6 +168,10 @@ export async function examView(id, frame) {
   if (!quiz) { v.innerHTML = `<div class="notice">Quiz not found. <a href="#/quizzes">Back to quizzes</a></div>`; return; }
   const school = head.profile, mine = quiz.owner_id === auth.user?.id;
   const ex = { ...defaults(quiz, school.kind), ...(quiz.exam || {}) };
+  // Papers follow the teacher's section: school papers for primary and secondary, semester papers for higher.
+  const higher = TERTIARY.includes(school.kind) || school.kind === "training";
+  if (higher && !TERTIARY.includes(ex.style)) ex.style = TERTIARY.includes(school.kind) ? school.kind : "university";
+  if (!higher) ex.style = "school";
   if (quiz.exam?.instrB && !quiz.exam.instrBExtra) ex.instrBExtra = ""; // older saved format
   const usable = quiz.questions.filter((x) => x.type !== "poll" && x.type !== "word");
   const nObj = usable.filter((x) => x.type !== "short").length, nTh = usable.length - nObj;
@@ -183,12 +187,14 @@ export async function examView(id, frame) {
     ${school.name ? "" : `<div class="notice no-print">Add your school name and logo once under <a href="#/school">School</a> so they appear on every paper.</div>`}
     <div class="exam-layout">
       <form class="panel no-print" id="exForm" style="gap:14px">
-        <div class="field"><label class="label" for="ex-style">Paper style</label><select id="ex-style"><option value="school">Primary / secondary school</option><option value="university">University</option><option value="polytechnic">Polytechnic</option><option value="college">College of Education / other college</option></select></div>
+        <div class="field" ${higher ? "" : "hidden"}><label class="label" for="ex-style">Paper style</label><select id="ex-style">${higher ? `<option value="university">University</option><option value="polytechnic">Polytechnic</option><option value="college">College of Education / other college</option>` : `<option value="school">School</option>`}</select></div>
         <h2 style="font-size:18px">Paper heading</h2>
         ${fld("title", "Examination", "text", `list="examTitles"`)}
-        <datalist id="examTitles"><option>First Term Examination</option><option>Second Term Examination</option><option>Third Term Examination</option><option>Mid-Term Test</option><option>Continuous Assessment Test</option><option>Mock Examination</option><option>Promotion Examination</option><option>First Semester Examination</option><option>Second Semester Examination</option><option>Resit Examination</option></datalist>
+        <datalist id="examTitles">${(higher ? ["First Semester Examination", "Second Semester Examination", "Continuous Assessment Test", "Mid-Semester Test", "Resit Examination"]
+          : school.kind === "primary" ? ["Class Test", "First Term Examination", "Second Term Examination", "Third Term Examination", "Mid-Term Test", "Weekly Test"]
+          : ["First Term Examination", "Second Term Examination", "Third Term Examination", "Mid-Term Test", "Continuous Assessment Test", "Mock Examination", "Promotion Examination"]).map((t) => `<option>${t}</option>`).join("")}</datalist>
         ${fld("session", "Academic session")}
-        <div data-style="school" class="opts">${fld("subject", "Subject")}${fld("klass", "Class", "text", `placeholder="e.g. JSS 2 / SS 1"`)}</div>
+        <div data-style="school" class="opts">${fld("subject", "Subject")}${fld("klass", "Class", "text", `placeholder="${school.kind === "primary" ? "e.g. Primary 4" : "e.g. JSS 2 / SS 1"}"`)}</div>
         <div data-style="tertiary" style="display:grid;gap:12px">
           <div class="opts">${fld("faculty", "Faculty / School")}${fld("department", "Department")}</div>
           ${fld("level", "Level / programme", "text", `placeholder="${levelHint[ex.style] || "e.g. 300 Level / ND II / NCE 2"}"`)}

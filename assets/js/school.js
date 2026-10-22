@@ -2,9 +2,14 @@
 // members, Head of Department reviews) and data-protection settings.
 import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, ask, fmtDate, downloadFile } from "./ui.js";
-import { ctx } from "./shell.js";
+import { ctx, kindsIn, sectionBadge, SECTION_NAME } from "./shell.js";
 
-const KINDS = [["primary", "Primary school"], ["secondary", "Secondary school"], ["university", "University"], ["polytechnic", "Polytechnic / monotechnic"], ["college", "College (education, nursing, health, agriculture…)"], ["training", "Training / webinars / church / NGO"]];
+// Wording for the heading form, per section.
+const FORM = {
+  primary: { name: "School name", place: "e.g. Bright Stars Nursery & Primary School, Enugu", hint: "Your account is in the Primary section: easy questions, class teams and star charts, no pupil accounts." },
+  secondary: { name: "School name", place: "e.g. Kings College, Lagos", hint: "Your account is in the Secondary section: class codes, CBT tests, leaderboards and WAEC/NECO-style papers." },
+  higher: { name: "Institution name", place: "e.g. University of Lagos", hint: "Your account is in the Higher section: courses, matric numbers and semester papers. The type changes the wording on papers." },
+};
 
 // Directory of Nigerian universities, polytechnics and colleges of education
 // (assets/data/institutions.json, built from the NUC, NBTE and NCCE registers).
@@ -81,6 +86,7 @@ export async function schoolView(frame) {
   const { school, member } = head, p = head.profile;
   const isAdmin = !school || member.role === "admin";
   const members = school ? await q(sb.from("school_members").select("*").eq("school_id", school.id).order("joined_at")) : [];
+  const kinds = kindsIn();
 
   v.innerHTML = `
     <div class="page-h"><div><span class="label">${school ? "School account" : "Your details"}</span><h1>${school ? esc(school.name) : "School details"}</h1>
@@ -89,16 +95,18 @@ export async function schoolView(frame) {
       <form class="panel" id="schoolForm">
         <h2 style="font-size:20px">Heading on exam papers</h2>
         ${!isAdmin ? `<p class="notice" style="margin:0">Only the school admin can change these details.</p>` : ""}
-        ${isAdmin ? `<div class="field inst-find"><label class="label" for="instQ">Start from your institution</label>
+        ${isAdmin && ctx.section === "higher" ? `<div class="field inst-find"><label class="label" for="instQ">Start from your institution</label>
           <input id="instQ" type="search" autocomplete="off" placeholder="University, polytechnic or college of education, e.g. Yaba, UNN, FCE Zaria" aria-controls="instList">
           <ul class="inst-list" id="instList" role="listbox" hidden></ul>
           <small class="muted">From the official NUC, NBTE and NCCE registers. Fills in the name, place, type and motto; then upload your institution's logo below.</small></div>` : ""}
-        <div class="field"><label class="label" for="sName">School name</label><input id="sName" type="text" maxlength="120" placeholder="e.g. Kings College, Lagos" value="${esc(p.name)}"></div>
+        <div class="field"><label class="label" for="sName">${FORM[ctx.section].name}</label><input id="sName" type="text" maxlength="120" placeholder="${FORM[ctx.section].place}" value="${esc(p.name)}"></div>
         <div class="field"><label class="label" for="sAddr">Address</label><input id="sAddr" type="text" maxlength="200" value="${esc(p.address)}"></div>
         <div class="field"><label class="label" for="sMotto">Motto (optional)</label><input id="sMotto" type="text" maxlength="120" value="${esc(p.motto)}"></div>
         <div class="field"><label class="label" for="sContact">Contact line (optional)</label><input id="sContact" type="text" maxlength="160" placeholder="e.g. Tel: 0803 000 0000 · info@school.edu.ng" value="${esc(p.contact)}"></div>
-        <div class="field"><label class="label" for="sKind">Type of institution</label><select id="sKind">${KINDS.map(([k, l]) => `<option value="${k}" ${p.kind === k ? "selected" : ""}>${l}</option>`).join("")}</select>
-          <small class="muted">Sets sensible defaults: longer timers and no public rankings for primary, matric numbers and course codes for universities, "participants" for webinars.</small></div>
+        ${kinds.length > 1
+          ? `<div class="field"><label class="label" for="sKind">Type of institution</label><select id="sKind">${kinds.map(([k, l]) => `<option value="${k}" ${p.kind === k ? "selected" : ""}>${l}</option>`).join("")}</select>`
+          : `<div class="field"><span class="label">Section</span><input id="sKind" type="hidden" value="${kinds[0][0]}"><div class="row">${sectionBadge()} <b>${kinds[0][1]}</b></div>`}
+          <small class="muted">${FORM[ctx.section].hint} Registered in the wrong section? Use <a href="#" data-act="wrongsec">Report a problem</a>.</small></div>
         <div class="field"><span class="label">Logo or crest</span>
           <div class="row"><div id="logoBox" class="logo-box">${p.logo ? `<img src="${p.logo}" alt="School logo">` : `<span class="muted" style="font-size:12px">No logo</span>`}</div>
           <label class="btn sm" for="logoFile">Upload logo</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -179,6 +187,7 @@ export async function schoolView(frame) {
   v.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-act]"); if (!b) return;
     const act = b.dataset.act;
+    if (act === "wrongsec") { e.preventDefault(); return import("./feedback.js").then((m) => m.openFeedback(`My account (${auth.user.email}) is in the ${SECTION_NAME[ctx.section]} section but it should be in: `)); }
     try {
       if (act === "create") {
         const name = $("#cName", v).value.trim() || $("#sName", v).value.trim();

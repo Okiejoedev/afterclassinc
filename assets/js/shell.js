@@ -17,6 +17,9 @@ export const ctx = {
 // polytechnic, college of education; training/webinars sit here too).
 export const SECTION_OF = { primary: "primary", secondary: "secondary", university: "higher", polytechnic: "higher", college: "higher", training: "higher" };
 export const SECTION_NAME = { primary: "Primary", secondary: "Secondary", higher: "Higher" };
+// Institution types inside each section. Teachers only ever see and choose their own section's.
+export const KINDS = [["primary", "Primary school"], ["secondary", "Secondary school"], ["university", "University"], ["polytechnic", "Polytechnic / monotechnic"], ["college", "College (education, nursing, health, agriculture…)"], ["training", "Training / webinars / church / NGO"]];
+export const kindsIn = (sec = ctx.section) => KINDS.filter(([k]) => SECTION_OF[k] === sec);
 export const sectionBadge = (sec = ctx.section) => `<span class="sec-badge ${sec}">${SECTION_NAME[sec]}</span>`;
 
 // Words that change with the audience.

@@ -3,7 +3,7 @@
 import { rpc } from "./sb.js";
 import { $, dialog, toast } from "./ui.js";
 
-export function openFeedback() {
+export function openFeedback(prefill = "") {
   const d = dialog(`<form id="fbForm" style="display:grid;gap:12px">
     <div class="spread"><h2 style="font-size:22px">Report a problem</h2><button class="btn ghost sm" type="button" data-x aria-label="Close">✕</button></div>
     <p class="muted" style="margin:0">Tell us what happened or what you need. Every message is read.</p>
@@ -26,5 +26,6 @@ export function openFeedback() {
       $("#fbGo", d).disabled = false;
     }
   };
+  if (prefill) $("#fbMsg", d).value = prefill;
   $("#fbMsg", d).focus();
 }

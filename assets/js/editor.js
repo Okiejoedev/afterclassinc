@@ -23,6 +23,8 @@ export async function editorView(id, opts = {}) {
   const markDirty = (val = true) => { dirty = val; const s = $("#saveState"); if (s) s.textContent = val ? "Unsaved changes" : "All changes saved"; };
   ctx.leaveGuard = async () => !dirty || await ask("You have unsaved changes. Leave without saving?", "Leave", true);
   window.onbeforeunload = () => (dirty ? true : undefined);
+  // Each section only sees its own reading levels.
+  const LEVELS_IN = { primary: ["p13", "p46"], secondary: ["jss", "sss"], higher: ["uni", "poly", "coe", "adult"] };
   const defLevel = { primary: "p46", secondary: "jss", university: "uni", polytechnic: "poly", college: "coe", training: "adult" }[ctx.kind] || "jss";
   const inSchool = !!ctx.head?.school;
 
@@ -49,7 +51,7 @@ export async function editorView(id, opts = {}) {
         <div class="notes-box" id="expandBox" hidden></div>
         <div class="opts">
           <div class="field"><label class="label" for="count">Questions</label><select id="count">${[5, 10, 15, 20, 30, 40, 50, 60].map((n) => `<option ${n === 10 ? "selected" : ""}>${n}</option>`).join("")}</select></div>
-          <div class="field"><label class="label" for="level">Level</label><select id="level">${LEVELS.map(([k, l]) => `<option value="${k}" ${k === defLevel ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+          <div class="field"><label class="label" for="level">Level</label><select id="level">${LEVELS.filter(([k]) => LEVELS_IN[ctx.section].includes(k)).map(([k, l]) => `<option value="${k}" ${k === defLevel ? "selected" : ""}>${l}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="difficulty">Difficulty</label><select id="difficulty">${DIFFICULTY.map(([k, l]) => `<option value="${k}" ${k === (ctx.section === "primary" ? "easy" : "mixed") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="language">Language</label><select id="language">${LANGUAGES.map((l) => `<option>${l}</option>`).join("")}</select></div>
           <div class="field"><label class="label" for="engine">Writer</label><select id="engine">${AI_ENABLED ? `<option value="ai">AI (best quality)</option>` : ""}<option value="basic">Built-in (free, simple)</option></select></div>
