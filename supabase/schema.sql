@@ -1241,6 +1241,98 @@ begin
 end $$;
 
 -- =====================================================================
+-- PRIMARY: CLASS TABLETS AND THE LEARNING CORNER
+-- Young pupils don't type codes or passwords. The teacher opens a secret
+-- class-tablet link once on each tablet; after that a pupil just taps their
+-- own picture. Activities they finish are saved here and earn stars on the
+-- class star chart.
+-- =====================================================================
+alter table public.classes add column if not exists device_token text;
+create unique index if not exists classes_device_token_idx on public.classes (device_token) where device_token is not null;
+alter table public.students add column if not exists avatar text not null default '' check (length(avatar) <= 16);
+
+create table if not exists public.pupil_activity (
+  id         bigint generated always as identity primary key,
+  student_id uuid not null references public.students(id) on delete cascade,
+  class_id   uuid not null references public.classes(id) on delete cascade,
+  activity   text not null check (length(activity) between 1 and 40),
+  subject    text not null default '' check (length(subject) <= 20),
+  level      int not null default 1 check (level between 1 and 9),
+  correct    int not null check (correct >= 0),
+  total      int not null check (total between 1 and 100),
+  stars      int not null default 0 check (stars between 0 and 3),
+  created_at timestamptz not null default now()
+);
+create index if not exists pupil_activity_class_idx on public.pupil_activity (class_id, created_at desc);
+alter table public.pupil_activity enable row level security;
+drop policy if exists "teacher reads pupil activity" on public.pupil_activity;
+create policy "teacher reads pupil activity" on public.pupil_activity for select
+  using (exists (select 1 from classes c where c.id = class_id and c.owner_id = auth.uid()));
+drop policy if exists "teacher clears pupil activity" on public.pupil_activity;
+create policy "teacher clears pupil activity" on public.pupil_activity for delete
+  using (exists (select 1 from classes c where c.id = class_id and c.owner_id = auth.uid()));
+
+-- Teacher: make (or replace, which signs out every tablet) the class-tablet link.
+create or replace function public.class_device_link(p_class uuid, p_new boolean default false) returns text
+language plpgsql security definer set search_path = public as $$
+declare t text;
+begin
+  select device_token into t from classes where id = p_class and owner_id = auth.uid();
+  if not found then raise exception 'Class not found.'; end if;
+  if t is null or p_new then
+    t := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+    update classes set device_token = t where id = p_class;
+  end if;
+  return t;
+end $$;
+
+create or replace function public._device_class(p_token text) returns public.classes
+language sql stable security definer set search_path = public as $$
+  select * from classes where device_token = p_token and length(coalesce(p_token, '')) >= 40 $$;
+
+-- Tablet: the class, its pupils with their pictures and stars, and a live game to join (if one is running).
+create or replace function public.kid_class(p_token text) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare c classes := public._device_class(p_token);
+begin
+  if c.id is null then raise exception 'This tablet link has been changed. Ask your teacher to set up the tablet again.'; end if;
+  return json_build_object(
+    'class', c.name,
+    'pupils', (select coalesce(json_agg(json_build_object('id', s.id, 'name', s.full_name, 'no', s.student_no, 'avatar', s.avatar, 'stars', s.stars)
+                 order by lower(s.full_name)), '[]'::json) from students s where s.class_id = c.id),
+    'live', (select json_build_object('pin', x.pin, 'title', x.title) from sessions x
+              where x.class_id = c.id and x.kind = 'live' and x.status <> 'ended' and x.created_at > now() - interval '6 hours'
+              order by x.created_at desc limit 1));
+end $$;
+
+-- Tablet: a pupil finished an activity. Stars: 3 for 90%+, 2 for 60%+, 1 for taking part.
+create or replace function public.kid_save(p_token text, p_student uuid, p_activity text, p_subject text, p_level int, p_correct int, p_total int)
+returns json language plpgsql security definer set search_path = public as $$
+declare c classes := public._device_class(p_token); n int; tot int := least(greatest(coalesce(p_total, 1), 1), 100);
+  ok int := least(greatest(coalesce(p_correct, 0), 0), least(greatest(coalesce(p_total, 1), 1), 100)); st int;
+begin
+  if c.id is null then raise exception 'This tablet link has been changed. Ask your teacher to set up the tablet again.'; end if;
+  if not exists (select 1 from students where id = p_student and class_id = c.id) then raise exception 'Pupil not found in this class.'; end if;
+  if (select count(*) from pupil_activity where class_id = c.id and created_at > now() - interval '1 hour') >= 400 then
+    raise exception 'Lots of activities this hour. Have a rest and try again soon.';
+  end if;
+  st := case when ok * 10 >= tot * 9 then 3 when ok * 10 >= tot * 6 then 2 else 1 end;
+  insert into pupil_activity (student_id, class_id, activity, subject, level, correct, total, stars)
+  values (p_student, c.id, left(coalesce(p_activity, '?'), 40), left(coalesce(p_subject, ''), 20), least(greatest(coalesce(p_level, 1), 1), 9), ok, tot, st);
+  update students set stars = least(stars + st, 9999) where id = p_student returning stars into n;
+  return json_build_object('stars', st, 'total_stars', n);
+end $$;
+
+-- Tablet: a pupil picks their own animal picture.
+create or replace function public.kid_avatar(p_token text, p_student uuid, p_avatar text) returns void
+language plpgsql security definer set search_path = public as $$
+declare c classes := public._device_class(p_token);
+begin
+  if c.id is null then raise exception 'This tablet link has been changed. Ask your teacher to set up the tablet again.'; end if;
+  update students set avatar = left(coalesce(p_avatar, ''), 16) where id = p_student and class_id = c.id;
+end $$;
+
+-- =====================================================================
 -- RUNNING THE SITE: problem reports and the owner's stats page
 -- Make yourself an admin once (SQL Editor):
 --   insert into public.app_admins select id from auth.users where email = 'you@example.com';
@@ -1459,7 +1551,8 @@ begin
     'public.join_session(text, text, text, text)', 'public.session_state(uuid, uuid)', 'public.send_feedback(text, text, text)',
     'public.submit_answer(uuid, uuid, int, int, text)', 'public.submit_assignment(uuid, uuid, jsonb, jsonb)',
     'public.start_attempt(uuid, uuid)', 'public.aq_post(uuid, uuid, text)', 'public.aq_vote(uuid, uuid, bigint)',
-    'public.aq_list(uuid, uuid)', 'public.ping()'] loop
+    'public.aq_list(uuid, uuid)', 'public.ping()',
+    'public.kid_class(text)', 'public.kid_save(text, uuid, text, text, int, int, int)', 'public.kid_avatar(text, uuid, text)'] loop
     execute format('grant execute on function %s to anon, authenticated', f);
   end loop;
   -- teacher functions: signed-in only
@@ -1474,12 +1567,13 @@ begin
     'public.practice_quiz(uuid)', 'public.class_leaderboard(uuid)', 'public.teacher_week()',
     'public.is_app_admin()', 'public.admin_stats()', 'public.admin_feedback_done(bigint, boolean)',
     'public.admin_sections()', 'public.admin_people(text, text, text, int)', 'public.admin_person(uuid)', 'public.admin_quiz(uuid)',
-    'public.admin_schools()', 'public.admin_activity(int)', 'public.admin_set_kind(uuid, text)', 'public.admin_set_admin(uuid, boolean)'] loop
+    'public.admin_schools()', 'public.admin_activity(int)', 'public.admin_set_kind(uuid, text)', 'public.admin_set_admin(uuid, boolean)',
+    'public.class_device_link(uuid, boolean)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
   -- internal helpers are not callable from the website
-  foreach f in array array['public._kind_of(uuid)', 'public._user_section(uuid)', 'public._keep_section()', 'public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()', 'public._practice_open(public.sessions, public.players)',
+  foreach f in array array['public._device_class(text)', 'public._kind_of(uuid)', 'public._user_section(uuid)', 'public._keep_section()', 'public._assignment_score(uuid)', 'public._too_many_attempts()', 'public.handle_new_user()', 'public._practice_open(public.sessions, public.players)',
     'public._assignment_results(public.players, public.sessions)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;

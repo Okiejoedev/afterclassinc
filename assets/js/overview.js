@@ -20,8 +20,9 @@ async function loadClasses() {
 // Each section gets its own quick actions (the tools that matter most there).
 function quickActions(sec, w) {
   if (sec === "primary") return `
-      <a class="go" href="#/quizzes?pick=teams"><b>Class teams game</b><span>No phones: the class plays in teams on the board</span></a>
-      <a href="#/quizzes?pick=live"><b>▶ Live game</b><span>Big pictures and read-aloud on pupils' phones or tablets</span></a>
+      <a class="go" href="../kids/?board=1" target="_blank" rel="noopener"><b>🐢 Learning Corner</b><span>60+ read-aloud games, stories, tracing and drawing. Open on the board or class tablets</span></a>
+      <a href="#/quizzes?pick=teams"><b>Class teams game</b><span>No phones: the class plays in teams on the board</span></a>
+      <a href="#/quizzes?pick=live"><b>▶ Live game</b><span>Pupils on class tablets join with one tap, no PIN</span></a>
       <a href="#/new?blank"><b>Make a simple quiz</b><span>Type questions, or build one from your notes</span></a>
       <a href="#/quizzes?pick=print"><b>Print a worksheet</b><span>With your school's name and logo</span></a>
       <a href="#/classes"><b>Star chart</b><span>Give stars to pupils in your class</span></a>
@@ -45,7 +46,8 @@ function gettingStarted(sec, w, quizzes, sessions, classes) {
   if (sec === "primary") return `
       ${step(quizzes.length > 0, "Make a quiz", `Type a few simple questions, build one from your notes, or <a href="#" data-sample>add a sample quiz</a>.`)}
       ${step(sessions.length > 0, "Play it with your class", `No phones? Press <b>Class teams</b>: the question goes on the board and you score the teams. With phones or tablets, press <b>▶ Play live</b>; pupils join with the PIN and can have questions read aloud.`)}
-      ${step(classes.length > 0, "Add your class and give stars", `Create your class, paste the pupils' names, and award stars on the star chart.`)}`;
+      ${step(classes.length > 0, "Add your class and give stars", `Create your class, paste the pupils' names, and award stars on the star chart.`)}
+      ${step(false, "Set up a class tablet", `Open your class and press <b>Set up a class tablet</b>. Pupils then tap their own picture, with no codes to type, and play the <a href="../kids/" target="_blank" rel="noopener">Learning Corner</a>. You see each pupil's progress on the class page.`)}`;
   if (sec === "higher") return `
       ${step(classes.length > 0, "Create a course", `Add a course (e.g. "BIO 201 Cell Biology") and share its code; ${w.learners} join it from their dashboard with their matric numbers.`)}
       ${step(quizzes.length > 0, "Make questions", `From lecture notes or slides (PDF), by recording a lecture, or by importing past questions.`)}

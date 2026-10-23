@@ -1,7 +1,7 @@
 // Class lists (rosters): admission / matric numbers and names, so graded
 // tests have one attempt per student and results carry real names.
 import { sb, q, rpc } from "./sb.js";
-import { $, esc, toast, ask, fmtDate, waButton } from "./ui.js";
+import { $, esc, toast, ask, fmtDate, waButton, loadScript } from "./ui.js";
 import { ctx, frame, words } from "./shell.js";
 
 // Words and examples for each section's "classes" page.
@@ -86,6 +86,10 @@ export async function classView(id) {
       <label class="check"><input type="checkbox" id="lbShow" ${cls.leaderboard ? "checked" : ""}> Show top 10 to ${w.learners}</label></div>
       <p class="muted" style="margin:0;font-size:14px">Average score over this class's tests and live games (games with hidden scores don't count). ${w.Learners} see the top 10 and their own place, never the bottom of the list.</p>
       <div id="lbList"><p class="muted">Loading…</p></div></section>` : ""}
+    ${primary ? `<section class="panel"><div class="spread"><h2 style="font-size:20px">📱 Class tablet</h2><a class="btn sm" href="../kids/?board=1" target="_blank" rel="noopener">Learning Corner on the board</a></div>
+      <p class="muted" style="margin:0;font-size:14px">Pupils don't type codes or passwords. Open the class-tablet link once on each tablet or phone the class shares. After that, each pupil just taps their own picture and plays reading, maths, science, story and drawing games, all read aloud. Stars they earn land on the star chart below, and you see their progress here.</p>
+      <div id="tabletBox">${cls.device_token !== undefined ? `<button class="btn primary" id="tabletGo" type="button" style="justify-self:start">${cls.device_token ? "Show the class-tablet link" : "Set up a class tablet"}</button>` : `<p class="muted" style="margin:0">Class tablets need the latest database update (run supabase/schema.sql).</p>`}</div></section>
+      <section class="panel"><h2 style="font-size:20px">Learning progress</h2><div id="progBox"><p class="muted">Loading…</p></div></section>` : ""}
     <div class="bench">
       <section class="panel"><h2 style="font-size:20px">Add ${w.learners}</h2>
         <p class="muted" style="margin:0;font-size:14px">${primary ? "Paste one pupil's name per line (or number and name). You can copy straight from Excel or your register." : `Paste one per line: ${w.number} and full name. You can copy two columns straight from Excel or Google Sheets.`}</p>
@@ -101,8 +105,9 @@ export async function classView(id) {
           : `<div class="empty">Nobody yet. Paste your list on the left.</div>`}
       </section>
     </div>`;
+  if (primary) { tabletPanel(v, cls); progressPanel(v, cls, students); }
   $("#code", v)?.addEventListener("click", () => navigator.clipboard?.writeText(cls.join_code).then(() => toast("Class code copied"), () => {}));
-  if (cls.leaderboard !== undefined) {
+  if (cls.leaderboard !== undefined && !primary) {   // primary classes have no leaderboard
     rpc("class_leaderboard", { p_class: id }).then((b) => {
       $("#lbList", v).innerHTML = b.top.length ? `<div class="scroll-x"><table class="data"><thead><tr><th>#</th><th>Name</th><th>Average</th><th>Taken</th></tr></thead><tbody>
         ${b.top.map((r) => `<tr><td class="num">${r.pos}</td><td>${esc(r.name)}</td><td class="num"><b>${r.avg}%</b></td><td class="num">${r.taken}</td></tr>`).join("")}</tbody></table></div>`
@@ -162,4 +167,49 @@ export async function classView(id) {
     if (!(await ask(`Delete the ${w.klass} "${cls.name}" and its list? Past results stay.`, `Delete ${w.klass}`, true))) return;
     await q(sb.from("classes").delete().eq("id", id)); location.hash = "#/classes";
   };
+}
+
+/* ---------- Primary: class tablet link (pupils tap their picture, no codes) ---------- */
+function tabletPanel(v, cls) {
+  const box = $("#tabletBox", v);
+  const show = async (fresh = false) => {
+    let t;
+    try { t = await rpc("class_device_link", { p_class: cls.id, p_new: fresh }); } catch (err) { return toast(err.message, true); }
+    const url = new URL(`../kids/#t=${t}`, location.href).href;
+    box.innerHTML = `<div class="tablet-link"><div id="tabQr" class="qr-box"></div><div style="display:grid;gap:10px;align-content:start">
+      <ol style="margin:0;padding-left:20px;font-size:14px"><li>On the class tablet, scan this QR code with the camera, or open the link.</li><li>The tablet remembers the class. Add it to the home screen if you like.</li><li>Pupils tap their own picture, then choose a game.</li></ol>
+      <input type="text" readonly value="${esc(url)}" id="tabUrl" aria-label="Class-tablet link" style="font-size:13px">
+      <div class="row"><button class="btn sm" id="tabCopy" type="button">Copy link</button><a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">Open on this device</a>${waButton(`Class tablet for ${cls.name} (Afterclass Learning Corner). Open this on the tablet: ${url}`, "Send to my phone", "btn sm")}</div>
+      <p class="muted" style="margin:0;font-size:13px">Keep this link with the class tablets: anyone with it can play as your pupils. Lost a tablet? <button class="btn sm ghost danger" id="tabNew" type="button">Make a new link</button> (every tablet then needs the new one).</p></div></div>`;
+    $("#tabCopy", box).onclick = () => navigator.clipboard?.writeText(url).then(() => toast("Link copied"), () => $("#tabUrl", box).select());
+    $("#tabNew", box).onclick = async () => { if (await ask("Make a new class-tablet link? Tablets using the old link will stop working until you open the new one on them.", "Make a new link", true)) show(true); };
+    try { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"); const qr = window.qrcode(0, "M"); qr.addData(url); qr.make(); $("#tabQr", box).innerHTML = `<img alt="QR code for the class tablet" src="${qr.createDataURL(5, 2)}">`; }
+    catch { $("#tabQr", box).remove(); }
+  };
+  $("#tabletGo", v)?.addEventListener("click", () => show(false));
+}
+
+/* ---------- Primary: what each pupil has been practising (last 30 days) ---------- */
+async function progressPanel(v, cls, students) {
+  const box = $("#progBox", v);
+  let rows;
+  try { rows = await q(sb.from("pupil_activity").select("student_id,activity,subject,correct,total,stars,created_at").eq("class_id", cls.id).gte("created_at", new Date(Date.now() - 30 * 864e5).toISOString()).order("created_at", { ascending: false }).limit(3000)); }
+  catch { box.innerHTML = `<p class="muted" style="margin:0">Progress needs the latest database update (run supabase/schema.sql).</p>`; return; }
+  if (!rows.length) { box.innerHTML = `<p class="muted" style="margin:0">Nothing yet. When pupils play on the class tablet, you'll see here what each one practised, how they did, and which subject needs more practice.</p>`; return; }
+  const { ACTS, SUBJECTS } = await import("./kids/acts.js");
+  const SUBJ = Object.fromEntries(SUBJECTS.map((s) => [s.id, s.name])); SUBJ.games = "Games"; SUBJ.english ||= "Letters & words";
+  const title = (id) => ACTS[id]?.title || (id.startsWith("story-") ? "Story" : id.startsWith("memory-") ? "Memory pairs" : id.startsWith("trace-") ? "Tracing" : id);
+  const by = new Map(students.map((s) => [s.id, { s, n: 0, ok: 0, tot: 0, subj: {}, last: null }]));
+  for (const r of rows) {
+    const p = by.get(r.student_id); if (!p) continue;
+    p.n++; p.ok += r.correct; p.tot += r.total; p.last ||= r.created_at;
+    const k = r.subject || "games"; (p.subj[k] ||= { ok: 0, tot: 0 }); p.subj[k].ok += r.correct; p.subj[k].tot += r.total;
+  }
+  const pct = (a, b) => b ? Math.round((100 * a) / b) : 0;
+  const list = [...by.values()].sort((a, b) => b.n - a.n || a.s.full_name.localeCompare(b.s.full_name));
+  const best = (p, dir) => { const e = Object.entries(p.subj).filter(([k, x]) => x.tot >= 5 && k !== "games"); if (!e.length) return ""; e.sort((a, b) => dir * (pct(a[1].ok, a[1].tot) - pct(b[1].ok, b[1].tot))); const [k, x] = e[0]; return `${esc(SUBJ[k] || k)} <span class="muted">${pct(x.ok, x.tot)}%</span>`; };
+  box.innerHTML = `<p class="muted" style="margin:0;font-size:14px">Last 30 days on the class tablet. "Right first time" counts answers before any second try.</p>
+    <div class="scroll-x"><table class="data"><thead><tr><th>Pupil</th><th>Games played</th><th>Right first time</th><th>Strongest</th><th>Needs practice</th><th>Last played</th></tr></thead><tbody>
+    ${list.map((p) => `<tr><td>${esc(p.s.avatar || "")} ${esc(p.s.full_name)}</td><td class="num">${p.n}</td><td class="num">${p.tot ? `<b>${pct(p.ok, p.tot)}%</b>` : "–"}</td><td>${best(p, -1)}</td><td>${p.n ? best(p, 1) : `<span class="muted">hasn't played yet</span>`}</td><td>${p.last ? esc(fmtDate(p.last)) : ""}</td></tr>`).join("")}</tbody></table></div>
+    <details><summary class="muted" style="cursor:pointer">Latest activities</summary><ul class="todo" style="margin-top:8px">${rows.slice(0, 15).map((r) => `<li><div><b>${esc(by.get(r.student_id)?.s.full_name || "")}</b> · ${esc(title(r.activity))} · ${r.correct}/${r.total} · ${"★".repeat(r.stars)}<div class="muted" style="font-size:13px">${esc(fmtDate(r.created_at))}</div></div></li>`).join("")}</ul></details>`;
 }

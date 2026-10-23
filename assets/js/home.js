@@ -75,9 +75,9 @@ function landing(msg) {
         <article class="sec-card primary">
           <span class="sec-badge primary">Primary</span>
           <h3>Nursery &amp; primary schools</h3>
-          <ul><li>Class teams: play on the board, no phones needed</li><li>Big-picture games with read-aloud</li><li>Simple quizzes from your notes</li><li>Star charts and printable worksheets</li></ul>
+          <ul><li>Learning Corner: 60+ read-aloud games, stories, tracing and drawing</li><li>Class tablets: pupils tap their picture, no codes</li><li>Class teams on the board, no phones needed</li><li>Star charts and printable worksheets</li></ul>
           <p class="muted" style="margin:0;font-size:14px">Pupils don't need accounts: they play as teams or join with a PIN.</p>
-          ${teacher ? "" : `<button class="btn primary" data-auth="up" data-role="teacher" data-sec="primary" type="button">Register as a primary teacher</button>`}
+          <div class="row">${teacher ? "" : `<button class="btn primary" data-auth="up" data-role="teacher" data-sec="primary" type="button">Register as a primary teacher</button>`}<a class="btn" href="kids/">🐢 Try the Learning Corner</a></div>
         </article>
         <article class="sec-card secondary">
           <span class="sec-badge secondary">Secondary</span>

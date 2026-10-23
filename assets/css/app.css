@@ -608,3 +608,9 @@ body.stage .btn.wa { background: #1F9D55; border-color: #1F9D55; color: #fff; }
 .view-as select { width: auto; padding: 6px 10px; font-size: 14px; }
 .view-as.on { border: 2px solid var(--hi); background: color-mix(in srgb, var(--hi) 14%, var(--surface)); }
 .view-as .muted { font-size: 13px; flex: 1 1 220px; }
+
+/* primary: class tablet link */
+.tablet-link { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+.qr-box { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 8px; width: 180px; }
+.qr-box img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+@media (max-width: 640px) { .tablet-link { grid-template-columns: 1fr; } .qr-box { justify-self: center; } }
