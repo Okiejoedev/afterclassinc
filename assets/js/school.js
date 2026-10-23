@@ -106,7 +106,7 @@ export async function schoolView(frame) {
         ${kinds.length > 1
           ? `<div class="field"><label class="label" for="sKind">Type of institution</label><select id="sKind">${kinds.map(([k, l]) => `<option value="${k}" ${p.kind === k ? "selected" : ""}>${l}</option>`).join("")}</select>`
           : `<div class="field"><span class="label">Section</span><input id="sKind" type="hidden" value="${kinds[0][0]}"><div class="row">${sectionBadge()} <b>${kinds[0][1]}</b></div>`}
-          <small class="muted">${FORM[ctx.section].hint} Registered in the wrong section? Use <a href="#" data-act="wrongsec">Report a problem</a>.</small></div>
+          <small class="muted">${ctx.isAdmin ? "You're the site admin, so you can switch to any section to see how it looks for those teachers. Save, then open Home." : `${FORM[ctx.section].hint} Registered in the wrong section? Use <a href="#" data-act="wrongsec">Report a problem</a>.`}</small></div>
         <div class="field"><span class="label">Logo or crest</span>
           <div class="row"><div id="logoBox" class="logo-box">${p.logo ? `<img src="${p.logo}" alt="School logo">` : `<span class="muted" style="font-size:12px">No logo</span>`}</div>
           <label class="btn sm" for="logoFile">Upload logo</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
