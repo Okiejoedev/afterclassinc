@@ -174,3 +174,19 @@ body.kids.board .kq-opt { min-height: 130px; }
 /* keep long questions inside narrow phones */
 .kq-main { flex-wrap: wrap; } .kq-text { min-width: 0; overflow-wrap: anywhere; } .kq-opts > *, .k-grid > * { min-width: 0; }
 #kapp { overflow-x: clip; }
+
+/* Centre everything: grids with only a few tiles (e.g. 3 art games, 5 pupils) sit in the
+   middle instead of bunching on the left, and headings line up with them. */
+.k-grid.subjects { grid-template-columns: repeat(auto-fit, minmax(230px, 260px)); justify-content: center; }
+.k-grid.acts { grid-template-columns: repeat(auto-fit, minmax(180px, 210px)); justify-content: center; }
+.k-grid.pupils { grid-template-columns: repeat(auto-fit, minmax(150px, 180px)); justify-content: center; }
+.k-grid.avatars { grid-template-columns: repeat(auto-fit, minmax(96px, 110px)); justify-content: center; }
+.k-main > .k-h1, .k-main > .k-sub, .k-main > .k-h2, .k-more summary { text-align: center; }
+.k-hello { justify-content: center; }
+.k-more { text-align: center; } .k-more .k-grid { text-align: initial; }
+.k-h1 svg { height: .85em; width: auto; vertical-align: -.08em; }
+@media (max-width: 560px) {
+  .k-grid.subjects, .k-grid.acts, .k-grid.pupils { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .k-grid.avatars { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.k-main { padding-top: 8px; }

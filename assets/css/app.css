@@ -614,3 +614,11 @@ body.stage .btn.wa { background: #1F9D55; border-color: #1F9D55; color: #fff; }
 .qr-box { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 8px; width: 180px; }
 .qr-box img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 @media (max-width: 640px) { .tablet-link { grid-template-columns: 1fr; } .qr-box { justify-self: center; } }
+.view-as select { min-width: 0; max-width: 100%; flex: 1 1 220px; }
+.view-as label { flex: 0 0 auto; }
+/* the dashboard column never grows wider than the screen (stops sideways scrolling on phones) */
+.shell { grid-template-columns: minmax(0, 1fr); }
+.topbar > * { min-width: 0; }
+@media (max-width: 560px) { .shell { padding: 12px 12px 48px; } .topbar .acct { display: none; } }
+.home-wrap { grid-template-columns: minmax(0, 1fr); }
+.panel > * { min-width: 0; }
