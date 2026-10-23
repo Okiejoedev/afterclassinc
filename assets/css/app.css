@@ -602,3 +602,9 @@ body.stage .btn.wa { background: #1F9D55; border-color: #1F9D55; color: #fff; }
 .admin-nums b { color: var(--ink); font-size: 20px; }
 .admin-filter { grid-template-columns: 2fr 1fr 1fr auto; align-items: end; }
 @media (max-width: 720px) { .admin-filter { grid-template-columns: 1fr; } }
+
+/* admin "view as" strip under the top bar */
+.view-as { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: -6px 0 18px; padding: 8px 14px; border: 1px dashed var(--line); border-radius: 14px; font-size: 14px; background: var(--surface); }
+.view-as select { width: auto; padding: 6px 10px; font-size: 14px; }
+.view-as.on { border: 2px solid var(--hi); background: color-mix(in srgb, var(--hi) 14%, var(--surface)); }
+.view-as .muted { font-size: 13px; flex: 1 1 220px; }

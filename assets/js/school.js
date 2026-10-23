@@ -2,7 +2,7 @@
 // members, Head of Department reviews) and data-protection settings.
 import { sb, q, rpc } from "./sb.js";
 import { $, esc, toast, ask, fmtDate, downloadFile } from "./ui.js";
-import { ctx, kindsIn, sectionBadge, SECTION_NAME } from "./shell.js";
+import { ctx, kindsIn, sectionBadge, SECTION_NAME, viewAs } from "./shell.js";
 
 // Wording for the heading form, per section.
 const FORM = {
@@ -71,12 +71,14 @@ export async function loadHeader() {
   const { data: auth } = await sb.auth.getUser();
   const me = auth.user?.id;
   const member = me ? await q(sb.from("school_members").select("*").eq("user_id", me).maybeSingle()).catch(() => null) : null;
+  // An admin previewing another section sees its kind everywhere; realKind keeps the saved one.
+  const preview = (h) => viewAs.get() ? { ...h, profile: { ...h.profile, kind: viewAs.get(), realKind: h.profile.kind } } : h;
   if (member) {
     const school = await q(sb.from("schools").select("*").eq("id", member.school_id).maybeSingle());
-    return { school, member, profile: school };
+    return preview({ school, member, profile: school });
   }
   const p = me ? await q(sb.from("school_profiles").select("*").maybeSingle()).catch(() => null) : null;
-  return { school: null, member: null, profile: p || { name: "", address: "", motto: "", contact: "", logo: null, kind: "secondary", retention_days: 365 } };
+  return preview({ school: null, member: null, profile: p || { name: "", address: "", motto: "", contact: "", logo: null, kind: "secondary", retention_days: 365 } });
 }
 
 export async function schoolView(frame) {
@@ -106,6 +108,7 @@ export async function schoolView(frame) {
         ${kinds.length > 1
           ? `<div class="field"><label class="label" for="sKind">Type of institution</label><select id="sKind">${kinds.map(([k, l]) => `<option value="${k}" ${p.kind === k ? "selected" : ""}>${l}</option>`).join("")}</select>`
           : `<div class="field"><span class="label">Section</span><input id="sKind" type="hidden" value="${kinds[0][0]}"><div class="row">${sectionBadge()} <b>${kinds[0][1]}</b></div>`}
+          ${p.realKind ? `<p class="notice" style="margin:0">You're previewing another section, so this shows its options. Saving keeps your own type. Use <b>Back to my own</b> at the top to change your real type.</p>` : ""}
           <small class="muted">${ctx.isAdmin ? "You're the site admin, so you can switch to any section to see how it looks for those teachers. Save, then open Home." : `${FORM[ctx.section].hint} Registered in the wrong section? Use <a href="#" data-act="wrongsec">Report a problem</a>.`}</small></div>
         <div class="field"><span class="label">Logo or crest</span>
           <div class="row"><div id="logoBox" class="logo-box">${p.logo ? `<img src="${p.logo}" alt="School logo">` : `<span class="muted" style="font-size:12px">No logo</span>`}</div>
@@ -137,12 +140,12 @@ export async function schoolView(frame) {
   $("#logoDel", v).onclick = () => { logo = null; $("#logoBox", v).innerHTML = `<span class="muted" style="font-size:12px">No logo</span>`; $("#logoDel", v).hidden = true; };
   $("#schoolForm", v).onsubmit = async (e) => {
     e.preventDefault();
-    const row = { name: $("#sName", v).value.trim(), address: $("#sAddr", v).value.trim(), motto: $("#sMotto", v).value.trim(), contact: $("#sContact", v).value.trim(), logo, kind: $("#sKind", v).value };
+    const row = { name: $("#sName", v).value.trim(), address: $("#sAddr", v).value.trim(), motto: $("#sMotto", v).value.trim(), contact: $("#sContact", v).value.trim(), logo, kind: p.realKind || $("#sKind", v).value };   // never save a preview
     try {
       if (school) await q(sb.from("schools").update({ ...row, require_approval: $("#sApproval", v).checked }).eq("id", school.id));
       else await q(sb.from("school_profiles").upsert({ owner_id: auth.user.id, ...row, retention_days: Number($("#sRetain", v).value), updated_at: new Date().toISOString() }));
       toast("Saved");
-      if (row.kind !== p.kind) setTimeout(() => location.reload(), 600);   // a new section changes the whole dashboard
+      if (row.kind !== (p.realKind || p.kind)) setTimeout(() => location.reload(), 600);   // a new section changes the whole dashboard
     } catch (err) { toast(err.message, true); }
   };
   $("#sRetain", v).onchange = async (e) => {
@@ -193,7 +196,7 @@ export async function schoolView(frame) {
       if (act === "create") {
         const name = $("#cName", v).value.trim() || $("#sName", v).value.trim();
         if (!name) return toast("Type the school name", true);
-        await rpc("create_school", { p_name: name, p_kind: $("#sKind", v).value, p_display_name: $("#cMe", v).value.trim() });
+        await rpc("create_school", { p_name: name, p_kind: p.realKind || $("#sKind", v).value, p_display_name: $("#cMe", v).value.trim() });
         toast("School account created"); ctx.head = await loadHeader(); schoolView(frame);
       }
       if (act === "join") {

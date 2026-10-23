@@ -118,8 +118,8 @@ async function route() {
   if (ctx.leaveGuard && location.hash !== currentHash && !(await ctx.leaveGuard())) { history.replaceState(null, "", currentHash || "#/quizzes"); return; }
   ctx.leaveGuard = null; window.onbeforeunload = null;
   currentHash = location.hash;
+  if (ctx.isAdmin === undefined) ctx.isAdmin = await rpc("is_app_admin", {}).catch(() => false);   // first: "View as" needs it
   if (!ctx.head) { ctx.head = await loadHeader().catch(() => ({ profile: { kind: "secondary" } })); autoPurge(); }
-  if (ctx.isAdmin === undefined) ctx.isAdmin = await rpc("is_app_admin", {}).catch(() => false);
   // The section chosen at sign-up (primary / secondary / university…) sets up the dashboard.
   // Teachers who registered before sections existed are asked once, on Home.
   if (!ctx.head.school && !ctx.head.profile?.owner_id && ctx.needSection === undefined) {
