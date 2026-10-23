@@ -142,6 +142,7 @@ export async function schoolView(frame) {
       if (school) await q(sb.from("schools").update({ ...row, require_approval: $("#sApproval", v).checked }).eq("id", school.id));
       else await q(sb.from("school_profiles").upsert({ owner_id: auth.user.id, ...row, retention_days: Number($("#sRetain", v).value), updated_at: new Date().toISOString() }));
       toast("Saved");
+      if (row.kind !== p.kind) setTimeout(() => location.reload(), 600);   // a new section changes the whole dashboard
     } catch (err) { toast(err.message, true); }
   };
   $("#sRetain", v).onchange = async (e) => {
